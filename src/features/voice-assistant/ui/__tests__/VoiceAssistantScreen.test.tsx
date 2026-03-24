@@ -1,5 +1,31 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantScreen } from '../VoiceAssistantScreen';
+
+function createSession(): UseTextChatResult {
+  return {
+    status: 'idle',
+    conversations: [
+      {
+        id: 'conv-1',
+        title: '默认会话',
+        lastMessage: '你好',
+        updatedAt: Date.now(),
+        status: 'idle',
+      },
+    ],
+    activeConversationId: 'conv-1',
+    messages: [],
+    sendText: jest.fn().mockResolvedValue(undefined),
+    isVoiceActive: false,
+    toggleVoice: jest.fn().mockResolvedValue(undefined),
+    voiceModeLabel: 'Demo实时通话模式（连续语音上行）',
+    voiceToggleLabel: '开始通话',
+    voiceRuntimeHint: '实时通话未开启',
+    connectivityHint: '尚未测试连接',
+    testS2SConnection: jest.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe('VoiceAssistantScreen', () => {
   it('renders skeleton header', async () => {
@@ -64,5 +90,25 @@ describe('VoiceAssistantScreen', () => {
         'S2S: 缺少 EXPO_PUBLIC_S2S_APP_ID / EXPO_PUBLIC_S2S_ACCESS_TOKEN / EXPO_PUBLIC_S2S_WS_URL',
       ),
     ).toBeTruthy();
+  });
+
+  it('renders explicit navigation actions when route callbacks exist', async () => {
+    const onGoConversation = jest.fn();
+    const onGoHome = jest.fn();
+
+    render(
+      <VoiceAssistantScreen
+        session={createSession()}
+        onGoConversation={onGoConversation}
+        onGoHome={onGoHome}
+      />,
+    );
+
+    await screen.findByText('默认会话');
+    fireEvent.press(screen.getByTestId('voice-go-conversation-button'));
+    fireEvent.press(screen.getByTestId('voice-go-home-button'));
+
+    expect(onGoConversation).toHaveBeenCalledTimes(1);
+    expect(onGoHome).toHaveBeenCalledTimes(1);
   });
 });

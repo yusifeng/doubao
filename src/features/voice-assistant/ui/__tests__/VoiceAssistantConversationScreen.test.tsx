@@ -52,16 +52,25 @@ describe('VoiceAssistantConversationScreen', () => {
   it('sends text and opens voice page', async () => {
     const session = createSession();
     const onOpenVoice = jest.fn();
+    const onGoHome = jest.fn();
 
-    render(<VoiceAssistantConversationScreen session={session} onOpenVoice={onOpenVoice} />);
+    render(
+      <VoiceAssistantConversationScreen
+        session={session}
+        onOpenVoice={onOpenVoice}
+        onGoHome={onGoHome}
+      />,
+    );
 
     fireEvent.changeText(screen.getByTestId('conversation-message-input'), '测试一下');
     fireEvent.press(screen.getByTestId('conversation-send-button'));
     fireEvent.press(screen.getByTestId('conversation-open-voice-button'));
+    fireEvent.press(screen.getByTestId('conversation-go-home-button'));
 
     await waitFor(() => {
       expect(session.sendText).toHaveBeenCalledWith('测试一下');
     });
     expect(onOpenVoice).toHaveBeenCalledTimes(1);
+    expect(onGoHome).toHaveBeenCalledTimes(1);
   });
 });

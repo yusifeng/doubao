@@ -26,9 +26,33 @@
 
 ## Entries
 
-## 2026-03-25 01:50 (Asia/Shanghai) - my-doubao2-router-migration-runtime-validation
+## 2026-03-25 01:58 (Asia/Shanghai) - in-app-route-actions-for-conversation-and-voice
 
 - Commit: pending
+- Author: Codex
+- Scope:
+  - `app/conversation/[conversationId].tsx`
+  - `app/voice/[conversationId].tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `docs/exec-plans/active/plan-my-doubao2-migration.md`
+- Summary:
+  - Added explicit page-level navigation actions so conversation and voice screens can return to home or switch routes without relying only on the system back gesture.
+  - Wired the new callbacks through Expo Router route files and covered them with UI tests.
+  - Synced the active migration plan so the current phase explicitly records the new in-app navigation affordance.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand` (pass, 8 suites / 29 tests)
+- Risk:
+  - Navigation buttons now add more route pushes in the stack; if we later want stricter stack behavior, we may choose `replace` for some transitions.
+- Rollback:
+  - Revert the listed route, screen, and UI test files to remove the explicit navigation actions.
+
+## 2026-03-25 01:50 (Asia/Shanghai) - my-doubao2-router-migration-runtime-validation
+
+- Commit: d098910
 - Author: Codex
 - Scope:
   - `app/`

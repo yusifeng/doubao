@@ -8,11 +8,13 @@ import { extractAssistantDisplaySegments } from '../service/assistantText';
 type VoiceAssistantConversationScreenProps = {
   session: UseTextChatResult;
   onOpenVoice: () => void;
+  onGoHome?: () => void;
 };
 
 export function VoiceAssistantConversationScreen({
   session,
   onOpenVoice,
+  onGoHome,
 }: VoiceAssistantConversationScreenProps) {
   const [draft, setDraft] = useState('');
   const activeConversation = useMemo(
@@ -39,6 +41,24 @@ export function VoiceAssistantConversationScreen({
             <Text className="mt-3 text-base leading-6 text-orange-50">
               状态：{VOICE_ASSISTANT_STATUS_LABEL[session.status]}，支持文本输入和跳转到语音页。
             </Text>
+            <View className="mt-4 flex-row flex-wrap gap-2.5">
+              {onGoHome ? (
+                <TouchableOpacity
+                  className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
+                  onPress={onGoHome}
+                  testID="conversation-go-home-button"
+                >
+                  <Text className="text-sm font-semibold text-white">返回首页</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
+                onPress={onOpenVoice}
+                testID="conversation-hero-open-voice-button"
+              >
+                <Text className="text-sm font-semibold text-white">切到语音页</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View className="flex-1 px-4 py-4">

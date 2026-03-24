@@ -9,6 +9,9 @@ export default function ConversationRoute() {
   return (
     <VoiceAssistantConversationScreen
       session={session}
+      onGoHome={() => {
+        router.push('/');
+      }}
       onOpenVoice={() => {
         router.push(`/voice/${conversationId}`);
       }}

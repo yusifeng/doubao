@@ -7,9 +7,15 @@ import { extractAssistantDisplaySegments } from '../service/assistantText';
 
 type VoiceAssistantScreenContentProps = {
   session: UseTextChatResult;
+  onGoConversation?: () => void;
+  onGoHome?: () => void;
 };
 
-function VoiceAssistantScreenContent({ session }: VoiceAssistantScreenContentProps) {
+function VoiceAssistantScreenContent({
+  session,
+  onGoConversation,
+  onGoHome,
+}: VoiceAssistantScreenContentProps) {
   const {
     status,
     conversations,
@@ -52,6 +58,26 @@ function VoiceAssistantScreenContent({ session }: VoiceAssistantScreenContentPro
             <Text className="mt-3 text-base leading-6 text-orange-50">
               M3 text-first ready: conversation + message pipeline
             </Text>
+            <View className="mt-4 flex-row flex-wrap gap-2.5">
+              {onGoHome ? (
+                <TouchableOpacity
+                  className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
+                  onPress={onGoHome}
+                  testID="voice-go-home-button"
+                >
+                  <Text className="text-sm font-semibold text-white">返回首页</Text>
+                </TouchableOpacity>
+              ) : null}
+              {onGoConversation ? (
+                <TouchableOpacity
+                  className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
+                  onPress={onGoConversation}
+                  testID="voice-go-conversation-button"
+                >
+                  <Text className="text-sm font-semibold text-white">返回会话</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           <View className="flex-1 px-4 py-4">
@@ -177,11 +203,23 @@ export function VoiceAssistantScreenStandalone() {
 
 type VoiceAssistantScreenProps = {
   session?: UseTextChatResult;
+  onGoConversation?: () => void;
+  onGoHome?: () => void;
 };
 
-export function VoiceAssistantScreen({ session }: VoiceAssistantScreenProps) {
+export function VoiceAssistantScreen({
+  session,
+  onGoConversation,
+  onGoHome,
+}: VoiceAssistantScreenProps) {
   if (session) {
-    return <VoiceAssistantScreenContent session={session} />;
+    return (
+      <VoiceAssistantScreenContent
+        session={session}
+        onGoConversation={onGoConversation}
+        onGoHome={onGoHome}
+      />
+    );
   }
   return <VoiceAssistantScreenStandalone />;
 }
