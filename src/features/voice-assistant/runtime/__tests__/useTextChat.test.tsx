@@ -14,6 +14,7 @@ const mockDisconnect = jest.fn<Promise<void>, []>();
 const mockSendAudioFrame = jest.fn<Promise<void>, [Uint8Array]>();
 const mockWaitForAssistantAudioChunk = jest.fn<Promise<Uint8Array | null>, [number]>();
 const mockWaitForAssistantText = jest.fn<Promise<string | null>, [number]>();
+let latestCaptureCallback: ((frame: Uint8Array) => Promise<void> | void) | undefined;
 
 jest.mock('../providers', () => ({
   createVoiceAssistantProviders: () => ({
@@ -60,10 +61,12 @@ describe('useTextChat realtime lifecycle lock', () => {
     jest.clearAllMocks();
     process.env.NODE_ENV = 'development';
     mockStartCapture.mockImplementation(
-      () =>
-        new Promise((resolve) => {
+      (onFrame) => {
+        latestCaptureCallback = onFrame;
+        return new Promise((resolve) => {
           setTimeout(resolve, 30);
-        }),
+        });
+      },
     );
     mockStopCapture.mockResolvedValue();
     mockStopPlayback.mockResolvedValue();
@@ -77,6 +80,10 @@ describe('useTextChat realtime lifecycle lock', () => {
     mockSendAudioFrame.mockResolvedValue();
     mockWaitForAssistantAudioChunk.mockResolvedValue(null);
     mockWaitForAssistantText.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    latestCaptureCallback = undefined;
   });
 
   afterAll(() => {
@@ -103,5 +110,109 @@ describe('useTextChat realtime lifecycle lock', () => {
     await waitFor(() => {
       expect(result.current.isVoiceActive).toBe(true);
     });
+  });
+
+  it('drops sustained low-energy frames before upstream send', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await waitFor(() => {
+      expect(typeof latestCaptureCallback).toBe('function');
+    });
+
+    const callback = latestCaptureCallback as (frame: Uint8Array) => Promise<void>;
+    const silentFrame = new Uint8Array(3200);
+    const speechFrame = new Uint8Array(3200);
+    // A few non-zero int16 samples are enough to cross the lightweight peak gate.
+    speechFrame[0] = 0xff;
+    speechFrame[1] = 0x1f;
+
+    await act(async () => {
+      for (let index = 0; index < 12; index += 1) {
+        await callback(silentFrame);
+      }
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(3);
+    expect(mockSendAudioFrame).toHaveBeenLastCalledWith(speechFrame);
+  });
+
+  it('creates a local mute window after speech tails into sustained silence', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await waitFor(() => {
+      expect(typeof latestCaptureCallback).toBe('function');
+    });
+    expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+
+    const callback = latestCaptureCallback as (frame: Uint8Array) => Promise<void>;
+    const silentFrame = new Uint8Array(3200);
+    const speechFrame = new Uint8Array(3200);
+    speechFrame[0] = 0xff;
+    speechFrame[1] = 0x1f;
+
+    const nowSpy = jest.spyOn(Date, 'now');
+    let nowMs = 1000;
+    nowSpy.mockImplementation(() => nowMs);
+
+    await act(async () => {
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      for (let index = 0; index < 9; index += 1) {
+        nowMs += 67;
+        await callback(silentFrame);
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('已发送，等待回复');
+    });
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(6);
+
+    await act(async () => {
+      nowMs += 67;
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(6);
+
+    await act(async () => {
+      nowMs += 1300;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(10);
+    expect(mockSendAudioFrame).toHaveBeenLastCalledWith(speechFrame);
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('已听到你在说话');
+    });
+    nowSpy.mockRestore();
   });
 });

@@ -23,6 +23,7 @@ export type UseTextChatResult = {
 };
 
 type RealtimeCallPhase = 'idle' | 'starting' | 'listening' | 'speaking' | 'stopping';
+type RealtimeListeningState = 'ready' | 'hearing' | 'awaiting_reply';
 
 const AUDIO_HINT_DEDUPE_WINDOW_MS = 8000;
 const VOICE_RUNTIME_CONFIG = {
@@ -37,12 +38,51 @@ const VOICE_RUNTIME_CONFIG = {
   realtimeSpeakingCooldownMs: 700,
   realtimeBatchMinPlayBytes: 9600,
   realtimeBatchFlushIdleMs: 120,
-  realtimeUpstreamMuteHoldMs: 1100,
-  realtimeUpstreamMuteAfterSpeakMs: 2200,
+  realtimeUpstreamMuteHoldMs: 450,
+  realtimeUpstreamMuteAfterSpeakMs: 320,
   realtimePcmBytesPerSecond: 24000 * 2,
-  realtimeUpstreamMutePlaybackMarginMs: 600,
+  realtimeUpstreamMutePlaybackMarginMs: 220,
   realtimeLoopErrorBackoffMs: 300,
+  realtimeSilenceGateHoldFrames: 2,
+  realtimeSilenceGatePeakThreshold: 0.018,
+  realtimeSilenceGateRmsThreshold: 0.0035,
+  realtimeSpeechDetectArmFrames: 4,
+  realtimeSpeechDetectPeakThreshold: 0.045,
+  realtimeSpeechDetectRmsThreshold: 0.01,
+  realtimeEndpointAssistArmFrames: 4,
+  realtimeEndpointAssistSilenceFrames: 9,
+  realtimeEndpointAssistMuteMs: 1250,
 } as const;
+
+function analyzePcm16Energy(frame: Uint8Array): { peak: number; rms: number } {
+  if (frame.length < 2) {
+    return { peak: 0, rms: 0 };
+  }
+
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+  let peak = 0;
+  let sumSquares = 0;
+  let sampleCount = 0;
+
+  for (let offset = 0; offset + 1 < frame.length; offset += 2) {
+    const sample = view.getInt16(offset, true) / 32768;
+    const amplitude = Math.abs(sample);
+    if (amplitude > peak) {
+      peak = amplitude;
+    }
+    sumSquares += sample * sample;
+    sampleCount += 1;
+  }
+
+  if (sampleCount === 0) {
+    return { peak: 0, rms: 0 };
+  }
+
+  return {
+    peak,
+    rms: Math.sqrt(sumSquares / sampleCount),
+  };
+}
 
 function concatAudioChunks(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -72,12 +112,19 @@ export function useTextChat(): UseTextChatResult {
   const lastRealtimeAssistantTextRef = useRef('');
   const realtimeUpstreamMutedUntilRef = useRef(0);
   const realtimePlaybackQueueEndAtRef = useRef(0);
+  const realtimeSilentFramesRef = useRef(0);
+  const realtimeDroppedNoiseFramesRef = useRef(0);
+  const realtimeSpeechFramesRef = useRef(0);
+  const realtimeSpeechDetectedRef = useRef(false);
+  const realtimePostSpeechSilentFramesRef = useRef(0);
+  const realtimeListeningStateRef = useRef<RealtimeListeningState>('ready');
   const micIssueLastHintAtRef = useRef(0);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [realtimeCallPhase, setRealtimeCallPhase] = useState<RealtimeCallPhase>('idle');
+  const [realtimeListeningState, setRealtimeListeningState] = useState<RealtimeListeningState>('ready');
   const [connectivityHint, setConnectivityHint] = useState('尚未测试连接');
   const [s2sSessionReady, setS2SSessionReady] = useState(false);
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
@@ -148,6 +195,13 @@ export function useTextChat(): UseTextChatResult {
     setRealtimeCallPhase('idle');
     realtimeUpstreamMutedUntilRef.current = 0;
     realtimePlaybackQueueEndAtRef.current = 0;
+    realtimeSilentFramesRef.current = 0;
+    realtimeDroppedNoiseFramesRef.current = 0;
+    realtimeSpeechFramesRef.current = 0;
+    realtimeSpeechDetectedRef.current = false;
+    realtimePostSpeechSilentFramesRef.current = 0;
+    realtimeListeningStateRef.current = 'ready';
+    setRealtimeListeningState('ready');
     lastRealtimeAssistantTextRef.current = '';
     lastAssistantAudioHintRef.current = null;
     setIsVoiceActive(false);
@@ -163,6 +217,14 @@ export function useTextChat(): UseTextChatResult {
   const updateRealtimeCallPhase = useCallback((phase: RealtimeCallPhase) => {
     realtimeCallPhaseRef.current = phase;
     setRealtimeCallPhase(phase);
+  }, []);
+
+  const updateRealtimeListeningState = useCallback((state: RealtimeListeningState) => {
+    if (realtimeListeningStateRef.current === state) {
+      return;
+    }
+    realtimeListeningStateRef.current = state;
+    setRealtimeListeningState(state);
   }, []);
 
   useEffect(
@@ -430,6 +492,7 @@ export function useTextChat(): UseTextChatResult {
             if (afterSpeakMuteUntil > realtimeUpstreamMutedUntilRef.current) {
               realtimeUpstreamMutedUntilRef.current = afterSpeakMuteUntil;
             }
+            updateRealtimeListeningState('ready');
             updateRealtimeCallPhase('listening');
             await updateConversationRuntimeStatus('listening', { refreshConversations: true });
           }
@@ -457,6 +520,7 @@ export function useTextChat(): UseTextChatResult {
               await providers.s2s.connect();
               await providers.s2s.startSession();
               setS2SSessionReady(true);
+              updateRealtimeListeningState('ready');
               updateRealtimeCallPhase('listening');
               await updateConversationRuntimeStatus('listening', { refreshConversations: true });
               continue;
@@ -491,6 +555,7 @@ export function useTextChat(): UseTextChatResult {
     repo,
     appendAssistantAudioMessage,
     syncConversationState,
+    updateRealtimeListeningState,
     updateConversationRuntimeStatus,
     updateRealtimeCallPhase,
   ]);
@@ -638,6 +703,12 @@ export function useTextChat(): UseTextChatResult {
       lastRealtimeAssistantTextRef.current = '';
       realtimeUpstreamMutedUntilRef.current = 0;
       realtimePlaybackQueueEndAtRef.current = 0;
+      realtimeSilentFramesRef.current = 0;
+      realtimeDroppedNoiseFramesRef.current = 0;
+      realtimeSpeechFramesRef.current = 0;
+      realtimeSpeechDetectedRef.current = false;
+      realtimePostSpeechSilentFramesRef.current = 0;
+      updateRealtimeListeningState('ready');
       voiceLoopActiveRef.current = true;
       setIsVoiceActive(true);
       await providers.audio.abortRecognition();
@@ -649,8 +720,75 @@ export function useTextChat(): UseTextChatResult {
         if (Date.now() < realtimeUpstreamMutedUntilRef.current) {
           return;
         }
+        const { peak, rms } = analyzePcm16Energy(frame);
+        const isSpeechLike =
+          peak >= VOICE_RUNTIME_CONFIG.realtimeSilenceGatePeakThreshold ||
+          rms >= VOICE_RUNTIME_CONFIG.realtimeSilenceGateRmsThreshold;
+        const isSpeechEvidence =
+          peak >= VOICE_RUNTIME_CONFIG.realtimeSpeechDetectPeakThreshold ||
+          rms >= VOICE_RUNTIME_CONFIG.realtimeSpeechDetectRmsThreshold;
+        if (isSpeechLike) {
+          if (isSpeechEvidence) {
+            realtimeSpeechFramesRef.current += 1;
+            if (
+              realtimeSpeechFramesRef.current >= VOICE_RUNTIME_CONFIG.realtimeSpeechDetectArmFrames
+            ) {
+              updateRealtimeListeningState('hearing');
+            }
+            if (
+              !realtimeSpeechDetectedRef.current &&
+              realtimeSpeechFramesRef.current >= VOICE_RUNTIME_CONFIG.realtimeEndpointAssistArmFrames
+            ) {
+              realtimeSpeechDetectedRef.current = true;
+            }
+          } else {
+            realtimeSpeechFramesRef.current = 0;
+          }
+          realtimePostSpeechSilentFramesRef.current = 0;
+          realtimeSilentFramesRef.current = 0;
+        } else {
+          realtimeSpeechFramesRef.current = 0;
+          if (realtimeSpeechDetectedRef.current) {
+            realtimePostSpeechSilentFramesRef.current += 1;
+            if (
+              realtimePostSpeechSilentFramesRef.current >=
+              VOICE_RUNTIME_CONFIG.realtimeEndpointAssistSilenceFrames
+            ) {
+              const muteUntil =
+                Date.now() + VOICE_RUNTIME_CONFIG.realtimeEndpointAssistMuteMs;
+              if (muteUntil > realtimeUpstreamMutedUntilRef.current) {
+                realtimeUpstreamMutedUntilRef.current = muteUntil;
+              }
+              providers.observability.log('info', 'realtime local endpoint assist armed', {
+                silentFrames: realtimePostSpeechSilentFramesRef.current,
+                muteMs: VOICE_RUNTIME_CONFIG.realtimeEndpointAssistMuteMs,
+              });
+              updateRealtimeListeningState('awaiting_reply');
+              realtimeSpeechDetectedRef.current = false;
+              realtimePostSpeechSilentFramesRef.current = 0;
+              realtimeSilentFramesRef.current = 0;
+              return;
+            }
+          }
+          realtimeSilentFramesRef.current += 1;
+          if (realtimeSilentFramesRef.current > VOICE_RUNTIME_CONFIG.realtimeSilenceGateHoldFrames) {
+            realtimeDroppedNoiseFramesRef.current += 1;
+            if (
+              realtimeDroppedNoiseFramesRef.current === 1 ||
+              realtimeDroppedNoiseFramesRef.current % 40 === 0
+            ) {
+              providers.observability.log('info', 'realtime upstream silence gate dropped frame', {
+                peak,
+                rms,
+                droppedFrames: realtimeDroppedNoiseFramesRef.current,
+              });
+            }
+            return;
+          }
+        }
         await providers.s2s.sendAudioFrame(frame);
       });
+      updateRealtimeListeningState('ready');
       updateRealtimeCallPhase('listening');
       await updateConversationRuntimeStatus('listening', { refreshConversations: true });
       providers.observability.log('info', 'demo realtime call started', { mode: 'realtime_audio', generation });
@@ -678,6 +816,7 @@ export function useTextChat(): UseTextChatResult {
     resetRealtimeCallState,
     runRealtimeDemoLoop,
     syncConversationState,
+    updateRealtimeListeningState,
     updateConversationRuntimeStatus,
     updateRealtimeCallPhase,
   ]);
@@ -827,16 +966,24 @@ export function useTextChat(): UseTextChatResult {
       case 'starting':
         return '实时上行准备中';
       case 'listening':
-        return '实时上行已开启';
+        switch (realtimeListeningState) {
+          case 'hearing':
+            return '已听到你在说话';
+          case 'awaiting_reply':
+            return '已发送，等待回复';
+          case 'ready':
+          default:
+            return '正在听你说';
+        }
       case 'speaking':
-        return '助手播报中，上行临时抑制';
+        return '助手播报中，稍后继续听';
       case 'stopping':
         return '实时通话关闭中';
       case 'idle':
       default:
         return '实时通话未开启';
     }
-  }, [isVoiceActive, realtimeCallPhase, voicePipelineMode]);
+  }, [isVoiceActive, realtimeCallPhase, realtimeListeningState, voicePipelineMode]);
 
   return {
     status: machine.status,

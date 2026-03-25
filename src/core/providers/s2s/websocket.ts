@@ -35,7 +35,9 @@ const TURN_END_EVENTS = new Set([359, 152, 153]);
 const INTERRUPT_CLEAR_AUDIO_EVENT = 450;
 const CONTROL_RESPONSE_TIMEOUT_MS = 5000;
 const SC_MODEL_VERSION = '2.2.0.0';
+const CUSTOM_SC_SPEAKER_ID = 'S_mXRP7Y5M1';
 const SC_FEMALE_SPEAKER_CANDIDATES = [
+  CUSTOM_SC_SPEAKER_ID,
   'saturn_zh_female_nuanxinxuejie_tob',
   'saturn_zh_female_wenrouwenya_tob',
   'saturn_zh_female_wumeiyujie_tob',

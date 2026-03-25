@@ -26,9 +26,64 @@
 
 ## Entries
 
-## 2026-03-25 01:58 (Asia/Shanghai) - in-app-route-actions-for-conversation-and-voice
+## 2026-03-25 03:22 (Asia/Shanghai) - migrate-native-pcm-player-into-mydoubao2
 
 - Commit: pending
+- Author: Codex
+- Scope:
+  - `android/app/src/main/java/com/anonymous/mydoubao2/MainApplication.kt`
+  - `android/app/src/main/java/com/anonymous/mydoubao2/audio/RNRealtimePcmPlayerModule.kt`
+  - `android/app/src/main/java/com/anonymous/mydoubao2/audio/RNRealtimePcmPlayerPackage.kt`
+  - `src/core/providers/audio/__tests__/expoRealtime.test.ts`
+  - `docs/exec-plans/active/plan-my-doubao2-migration.md`
+- Summary:
+  - Migrated the Android `RNRealtimePcmPlayer` native module from the old repo into `my-doubao2` and adapted the Kotlin package name to `com.anonymous.mydoubao2.audio`.
+  - Registered the package manually in `MainApplication.kt` so the Expo dev client can expose `NativeModules.RNRealtimePcmPlayer` at runtime.
+  - Added a JS regression test that proves `ExpoRealtimeAudioProvider.play()` prefers the native PCM stream on Android when the module is available.
+  - Updated the migration plan so the new repo now treats native PCM playback as migrated, with runtime quality tuning as the next step instead of module migration itself.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand` (pass, 9 suites / 33 tests)
+  - `NODE_ENV=development ./gradlew :app:assembleDebug` (pass)
+  - `adb install -r android/app/build/outputs/apk/debug/app-debug.apk` (pass)
+- Risk:
+  - This confirms the native module compiles and installs, but emulator audio quality can still differ from physical devices and may still need stream-level tuning.
+  - `expo-av` remains as a fallback path, so runtime logs should still be watched to ensure we stay on `native_pcm_stream`.
+- Rollback:
+  - Revert the listed Kotlin registration/module files and the audio provider test to return to the previous `expo-av`-only playback path.
+
+## 2026-03-25 02:08 (Asia/Shanghai) - theme-shared-ui-and-parity-sync
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/core/theme/mappers.ts`
+  - `src/features/voice-assistant/ui/VoiceAssistantHomeScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantMessageBubble.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantMessageBubble.test.tsx`
+  - `docs/design-docs/index.md`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+  - `docs/exec-plans/active/plan-my-doubao2-migration.md`
+  - `assets/migration-android-ui-theme-current.png`
+- Summary:
+  - Moved the shared warm-shell visual semantics for home, conversation, and voice routes into `src/core/theme/mappers.ts` so the screens no longer scatter duplicated class strings.
+  - Extracted a reusable `VoiceAssistantMessageBubble` to keep assistant narration rendering, bubble hierarchy, and role labeling consistent across conversation and voice pages.
+  - Synced the migration plan and design-doc index, refreshed the parity doc for the new repo, and captured a fresh Android runtime screenshot after the theme refactor.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand` (pass, 9 suites / 31 tests)
+  - Android runtime smoke check via existing Expo dev-client session on port `8081` (pass, NativeWind verify OK and screenshot captured)
+- Risk:
+  - This batch touches all three primary routes at once, so visual spacing still deserves a quick manual pass on a physical device before calling parity "final".
+  - The runtime smoke check reused the existing dev-client session rather than a full native rebuild.
+- Rollback:
+  - Revert the listed theme, screen, UI test, doc, and screenshot files to restore the previous per-screen markup.
+
+## 2026-03-25 01:58 (Asia/Shanghai) - in-app-route-actions-for-conversation-and-voice
+
+- Commit: 5274a8b
 - Author: Codex
 - Scope:
   - `app/conversation/[conversationId].tsx`

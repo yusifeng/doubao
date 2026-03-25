@@ -1,36 +1,53 @@
 # Voice Assistant UI Parity Notes
 
-## Reference Source
+## Figma Baseline
 
-- `my-doubao-pic/*.jpg`
+- File key: `xslmiLsD9WDdEkb4W1iBJe`
+- Session list: node `2003:442`
+- Conversation detail: node `2003:331`
+- Voice scene: node `2003:606`
 
-## Extracted Style Checklist
+## Visual Direction
 
-- Background tone: warm light canvas instead of generic dark dashboard.
-- Header block: strong brand color top area with large title and short supporting copy.
-- Main card shape: oversized rounded corners, soft border, comfortable padding.
-- Message area: spacious vertical rhythm, larger line-height, clearer role separation.
-- Assistant message style: light surface with subtle border.
-- User message style: dark filled bubble with high contrast text.
-- Primary action: saturated warm accent, rounded pill, stronger emphasis than secondary actions.
-- Secondary actions: low-contrast outlined pill buttons.
-- Input area: separate rounded container, soft fill, not plain border-only field.
+### Session list
+
+- White canvas with very light dividers instead of a framed warm shell.
+- Simple centered top title bar with left utility action and right search/edit actions.
+- Featured official row for `豆包` with a tiny `doubao.com` badge.
+- Dense chat list rows: circular pastel avatar, 17px title, 14px muted preview.
+- Session rows are backed by the real local conversation repo; mock showcase rows are removed.
+- Bottom tab bar with three simple tabs and a small unread badge.
+
+### Conversation detail
+
+- White chat surface with translucent top header.
+- User message bubble: right aligned bright blue pill.
+- Assistant short reply: left aligned light gray bubble.
+- Assistant long reply: soft outer card + inner white panel + action icons row.
+- Non-existent quick-action chips are removed; only real mode switch and connection actions remain.
+- Composer is a bottom dock with camera, pill input, mic button, and conditional send action.
+
+### Voice scene
+
+- Pink / purple / sky pastel full-screen atmosphere.
+- Large centered round avatar with soft white rings.
+- Middle listening dots + short status copy.
+- Bottom row of four circular controls, with a clear danger hang-up action.
+- Lightweight transcript capsule keeps runtime/debug visibility without falling back to the old debug layout.
+- Non-functional media shortcut buttons are removed from the runtime scene.
+
+## Implementation Rules
+
+- NativeWind remains the primary styling path.
+- Static class strings only; no dynamic Tailwind token interpolation.
+- `StyleSheet` is limited to shadows, depth, and a few size-sensitive visual touches.
+- Shared visual semantics live in `src/core/theme/mappers.ts` and `src/core/theme/tokens.ts`.
+- Shared chat rendering lives in `src/features/voice-assistant/ui/VoiceAssistantMessageBubble.tsx`.
 
 ## Current Acceptance Checklist
 
-- [x] Warm light canvas applied.
-- [x] Brand-colored hero/header block applied.
-- [x] Rounded card layout applied to status and messages.
-- [x] Input bar reworked to product-style container.
-- [x] Primary voice button visually distinct from secondary actions.
-- [x] Message typography and spacing increased for readability.
-- [x] Pixel 3a emulator visual review completed.
-- [x] Taller Android device visual review completed.
-- [x] Before/after screenshots stored in `assets/`.
-
-## Stored Review Assets
-
-- Before reference: `assets/ui-parity-before-reference.jpg`
-- After current screen: `assets/ui-parity-after-current.png`
-- Pixel 3a baseline capture: `assets/ui-parity-pixel3a-current.png`
-- Taller viewport capture: `assets/ui-parity-tall-current.png`
+- [x] Home route follows Figma node `2003:442` instead of the previous orange hero shell.
+- [x] Conversation route follows Figma node `2003:331` with iMessage-like bubble hierarchy.
+- [x] Voice route follows Figma node `2003:606` with full-screen pastel scene layout.
+- [x] NativeWind is still the dominant styling mechanism.
+- [x] Tokens/mappers remain the single semantic source for page-level styling.

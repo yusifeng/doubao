@@ -28,7 +28,7 @@ function createSession(): UseTextChatResult {
 }
 
 describe('VoiceAssistantHomeScreen', () => {
-  it('renders hero and current session summary', () => {
+  it('renders featured official entry and current session row', () => {
     render(
       <VoiceAssistantHomeScreen
         session={createSession()}
@@ -37,9 +37,11 @@ describe('VoiceAssistantHomeScreen', () => {
       />,
     );
 
-    expect(screen.getByText('Konan Companion')).toBeTruthy();
-    expect(screen.getByText('默认会话')).toBeTruthy();
-    expect(screen.getByText(/Demo实时通话模式/)).toBeTruthy();
+    expect(screen.getAllByText('对话').length).toBeGreaterThan(0);
+    expect(screen.getByText('豆包')).toBeTruthy();
+    expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
+    expect(screen.getByText('本地会话')).toBeTruthy();
+    expect(screen.queryByText('用户与豆包的互动')).toBeNull();
   });
 
   it('triggers navigation actions', () => {

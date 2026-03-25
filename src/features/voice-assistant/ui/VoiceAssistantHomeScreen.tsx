@@ -1,7 +1,14 @@
+import { useMemo } from 'react';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  voiceAssistantListThemeClass,
+  voiceAssistantThemeStyle,
+} from '../../../core/theme/mappers';
+import type { Conversation } from '../types/model';
 import type { UseTextChatResult } from '../runtime/useTextChat';
 import { VOICE_ASSISTANT_STATUS_LABEL } from '../config/constants';
+import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 
 type VoiceAssistantHomeScreenProps = {
   session: UseTextChatResult;
@@ -9,93 +16,197 @@ type VoiceAssistantHomeScreenProps = {
   onOpenVoice: () => void;
 };
 
+function formatConversationTime(updatedAt: number): string {
+  const date = new Date(updatedAt);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) {
+    return date.toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function buildConversationPreview(conversation: Conversation): string {
+  const preview = conversation.lastMessage.trim();
+  if (preview) {
+    return preview;
+  }
+  switch (conversation.status) {
+    case 'listening':
+      return '正在听你说，准备开始下一轮。';
+    case 'thinking':
+      return '正在思考这一轮回复。';
+    case 'speaking':
+      return '正在播报回复。';
+    case 'error':
+      return '这一轮出现问题，请重试。';
+    case 'idle':
+    default:
+      return '点击进入，继续这段对话。';
+  }
+}
+
+function ConversationAvatar({ index, isActive }: { index: number; isActive: boolean }) {
+  if (isActive) {
+    return (
+      <View className={`${voiceAssistantListThemeClass.listAvatarOuter} bg-sky-50`}>
+        <View className={`${voiceAssistantListThemeClass.listAvatarInner} bg-sky-100`}>
+          <Text className={voiceAssistantListThemeClass.listAvatarText}>会</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const palette = [
+    { outer: 'bg-violet-50', inner: 'bg-violet-100' },
+    { outer: 'bg-pink-50', inner: 'bg-pink-100' },
+    { outer: 'bg-amber-50', inner: 'bg-yellow-100' },
+    { outer: 'bg-emerald-50', inner: 'bg-emerald-100' },
+  ][index % 4];
+
+  return (
+    <View className={`${voiceAssistantListThemeClass.listAvatarOuter} ${palette.outer}`}>
+      <View className={`${voiceAssistantListThemeClass.listAvatarInner} ${palette.inner}`}>
+        <VoiceAssistantIcon name="chat" color="#64748B" size={20} />
+      </View>
+    </View>
+  );
+}
+
 export function VoiceAssistantHomeScreen({
   session,
   onOpenConversation,
   onOpenVoice,
 }: VoiceAssistantHomeScreenProps) {
-  const activeConversation = session.conversations.find(
-    (conversation) => conversation.id === session.activeConversationId,
+  const activeConversation = useMemo(
+    () => session.conversations.find((conversation) => conversation.id === session.activeConversationId) ?? null,
+    [session.activeConversationId, session.conversations],
   );
 
+  const conversations = useMemo(() => {
+    return session.conversations.map((conversation) => ({
+      ...conversation,
+      preview: buildConversationPreview(conversation),
+      meta: formatConversationTime(conversation.updatedAt),
+      isActive: conversation.id === session.activeConversationId,
+    }));
+  }, [session.activeConversationId, session.conversations]);
+
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View className="flex-1 px-4 pb-4 pt-2">
-        <View className="flex-1 overflow-hidden rounded-[32px] border border-amber-200 bg-white" style={styles.shellShadow}>
-          <View className="bg-orange-400 px-5 pb-6 pt-6">
-            <Text className="text-xs font-bold uppercase tracking-[1.8px] text-orange-50">
-              Doubao Voice
+    <SafeAreaView edges={['top', 'bottom']} className={voiceAssistantListThemeClass.safeArea}>
+      <View className={voiceAssistantListThemeClass.screen}>
+        <View className={voiceAssistantListThemeClass.header}>
+          <View className={voiceAssistantListThemeClass.headerSide}>
+            <TouchableOpacity className={voiceAssistantListThemeClass.headerAction}>
+              <VoiceAssistantIcon name="menu" size={20} color="#111827" />
+            </TouchableOpacity>
+          </View>
+          <View className={voiceAssistantListThemeClass.headerCenter}>
+            <Text className={voiceAssistantListThemeClass.headerTitle}>对话</Text>
+          </View>
+          <View className={`${voiceAssistantListThemeClass.headerSide} justify-end`}>
+            <TouchableOpacity className={voiceAssistantListThemeClass.headerAction}>
+              <VoiceAssistantIcon name="search" size={20} color="#111827" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          className={voiceAssistantListThemeClass.featuredCard}
+          onPress={onOpenVoice}
+          testID="open-voice-button"
+          style={voiceAssistantThemeStyle.listFeaturedShadow}
+        >
+          <View className={voiceAssistantListThemeClass.featuredAvatarOuter}>
+            <View className={voiceAssistantListThemeClass.featuredAvatarInner}>
+              <Text className={voiceAssistantListThemeClass.featuredAvatarText}>豆</Text>
+            </View>
+          </View>
+          <View className={voiceAssistantListThemeClass.featuredBody}>
+            <View className={voiceAssistantListThemeClass.featuredTitleRow}>
+              <Text className={voiceAssistantListThemeClass.featuredTitle}>豆包</Text>
+              <View className={voiceAssistantListThemeClass.featuredBadge}>
+                <Text className={voiceAssistantListThemeClass.featuredBadgeText}>实时语音</Text>
+              </View>
+            </View>
+            <Text className={voiceAssistantListThemeClass.featuredSubtitle}>
+              {activeConversation?.title ?? '默认会话'}
             </Text>
-            <Text className="mt-3 text-5xl font-black leading-[52px] text-white">
-              Konan Companion
-            </Text>
-            <Text className="mt-3 text-base leading-6 text-orange-50">
-              官方 Expo Router 底座上的语音助手迁移版，保留实时对话主链和角色设定。
+            <Text className="mt-1 text-[12px] leading-4 text-slate-400">
+              {session.voiceRuntimeHint}
             </Text>
           </View>
+          <View className={voiceAssistantListThemeClass.featuredVoiceButton}>
+            <VoiceAssistantIcon name="phone" size={18} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
 
-          <View className="flex-1 px-4 py-4">
-            <View className="rounded-[28px] border border-amber-200 bg-amber-50 px-4 py-4">
-              <Text className="text-xs font-semibold uppercase tracking-[1.2px] text-slate-500">
-                当前会话
-              </Text>
-              <Text className="mt-2 text-3xl font-extrabold text-slate-900">
-                {activeConversation?.title ?? '默认会话'}
-              </Text>
-              <Text className="mt-2 text-[15px] leading-6 text-slate-600">
-                状态：{VOICE_ASSISTANT_STATUS_LABEL[session.status]}
-              </Text>
-              <Text className="mt-2 text-[15px] leading-6 text-slate-600">
-                语音链路：{session.voiceModeLabel}
-              </Text>
-              <Text className="mt-2 text-[15px] leading-6 text-slate-600">
-                连接状态：{session.connectivityHint}
-              </Text>
-            </View>
+        <Text className={voiceAssistantListThemeClass.sectionLabel}>本地会话</Text>
 
-            <View className="mt-4 rounded-[28px] border border-orange-100 bg-orange-50 px-4 py-4">
-              <Text className="text-xs font-semibold uppercase tracking-[1.2px] text-orange-700">
-                迁移目标
-              </Text>
-              <Text className="mt-2 text-[16px] leading-7 text-slate-700">
-                首页负责会话入口，会话页承接消息流，语音页保留打电话式的主交互。当前先把
-                官方底座、NativeWind、S2S 主链路稳定跑通，再继续收口原生音频模块。
-              </Text>
-            </View>
-
-            <View className="mt-4 flex-row flex-wrap gap-3">
+        {conversations.length === 0 ? (
+          <View className={voiceAssistantListThemeClass.emptyState}>
+            <Text className={voiceAssistantListThemeClass.emptyStateTitle}>还没有会话记录</Text>
+            <Text className={voiceAssistantListThemeClass.emptyStateBody}>
+              先开始一轮文字或语音对话，新的会话会出现在这里。
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={voiceAssistantThemeStyle.listScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {conversations.map((conversation, index) => (
               <TouchableOpacity
-                className="rounded-full bg-amber-400 px-5 py-3 active:bg-amber-500"
-                onPress={onOpenConversation}
-                testID="open-conversation-button"
+                key={conversation.id}
+                className={voiceAssistantListThemeClass.listRow}
+                onPress={conversation.isActive ? onOpenConversation : undefined}
+                testID={conversation.isActive ? 'open-conversation-button' : undefined}
+                disabled={!conversation.isActive}
               >
-                <Text className="text-[15px] font-bold text-amber-950">进入会话</Text>
+                <ConversationAvatar index={index} isActive={conversation.isActive} />
+                <View className={voiceAssistantListThemeClass.listBody}>
+                  <Text className={voiceAssistantListThemeClass.listTitle}>{conversation.title}</Text>
+                  <Text className={voiceAssistantListThemeClass.listPreview} numberOfLines={1}>
+                    {conversation.preview}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Text className={voiceAssistantListThemeClass.listMeta}>{conversation.meta}</Text>
+                  <Text className="mt-1 text-[11px] text-slate-300">
+                    {VOICE_ASSISTANT_STATUS_LABEL[conversation.status]}
+                  </Text>
+                </View>
               </TouchableOpacity>
-              <TouchableOpacity
-                className="rounded-full bg-rose-500 px-5 py-3 active:bg-rose-600"
-                onPress={onOpenVoice}
-                testID="open-voice-button"
-              >
-                <Text className="text-[15px] font-bold text-white">进入语音页</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="rounded-full border border-orange-200 bg-white px-5 py-3 active:bg-orange-50"
-                onPress={session.testS2SConnection}
-                testID="home-s2s-test-button"
-              >
-                <Text className="text-[15px] font-semibold text-slate-700">连接测试</Text>
-              </TouchableOpacity>
-            </View>
+            ))}
+          </ScrollView>
+        )}
 
-            <View className="mt-4 flex-1 rounded-[28px] border border-amber-100 bg-white px-4 py-4">
-              <Text className="text-xs font-semibold uppercase tracking-[1.2px] text-slate-500">
-                最近消息
-              </Text>
-              <Text className="mt-3 text-[16px] leading-7 text-slate-700">
-                {session.messages.length > 0
-                  ? session.messages[session.messages.length - 1]?.content
-                  : '还没有消息，先发一条文本或开启语音。'}
-              </Text>
+        <View className={voiceAssistantListThemeClass.bottomTabs}>
+          <View className={voiceAssistantListThemeClass.bottomTabsRow}>
+            <View className={voiceAssistantListThemeClass.tabItem}>
+              <View>
+                <VoiceAssistantIcon name="chat" size={26} color="#000000" />
+                <View className={voiceAssistantListThemeClass.tabBadge}>
+                  <Text className={voiceAssistantListThemeClass.tabBadgeText}>
+                    {String(Math.max(1, conversations.length))}
+                  </Text>
+                </View>
+              </View>
+              <Text className={voiceAssistantListThemeClass.tabLabelActive}>对话</Text>
+            </View>
+            <TouchableOpacity className={voiceAssistantListThemeClass.tabItem} onPress={onOpenVoice}>
+              <View className="h-7 w-7 items-center justify-center rounded-[8px] border-2 border-slate-400">
+                <VoiceAssistantIcon name="phone" size={16} color="#71717A" />
+              </View>
+              <Text className={voiceAssistantListThemeClass.tabLabel}>语音</Text>
+            </TouchableOpacity>
+            <View className={voiceAssistantListThemeClass.tabItem}>
+              <VoiceAssistantIcon name="profile" size={26} color="#71717A" />
+              <Text className={voiceAssistantListThemeClass.tabLabel}>我的</Text>
             </View>
           </View>
         </View>
@@ -103,17 +214,3 @@ export function VoiceAssistantHomeScreen({
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFF4E8',
-  },
-  shellShadow: {
-    shadowColor: '#C9731F',
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
-  },
-});

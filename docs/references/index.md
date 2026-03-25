@@ -5,3 +5,4 @@
 ## 文档
 
 - [expo-rn-agent-reference.md](./expo-rn-agent-reference.md)
+- [expo-android-debug-runbook.md](./expo-android-debug-runbook.md)

@@ -37,7 +37,7 @@ function createSession(): UseTextChatResult {
 }
 
 describe('VoiceAssistantConversationScreen', () => {
-  it('renders messages and conversation title', () => {
+  it('renders chat header and messages', () => {
     render(
       <VoiceAssistantConversationScreen
         session={createSession()}
@@ -47,6 +47,12 @@ describe('VoiceAssistantConversationScreen', () => {
 
     expect(screen.getByText('默认会话')).toBeTruthy();
     expect(screen.getByText('你好，我在。')).toBeTruthy();
+    expect(screen.getByText('当前为文字对话模式')).toBeTruthy();
+    expect(screen.getByText('文字对话')).toBeTruthy();
+    expect(screen.getByText('语音通话')).toBeTruthy();
+    expect(screen.queryByText('快速')).toBeNull();
+    expect(screen.queryByText('AI')).toBeNull();
+    expect(screen.queryByText('豆包爱学')).toBeNull();
   });
 
   it('sends text and opens voice page', async () => {

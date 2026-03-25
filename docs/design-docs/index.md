@@ -5,3 +5,4 @@
 ## 文档
 
 - [voice-assistant-s2s-v1-design.md](./voice-assistant-s2s-v1-design.md)
+- [voice-assistant-ui-parity.md](./voice-assistant-ui-parity.md)

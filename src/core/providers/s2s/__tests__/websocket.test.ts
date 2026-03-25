@@ -77,4 +77,16 @@ describe('WebSocketS2SProvider text merge', () => {
     expect(provider.isLikelyDuplicatedCompletedText(first)).toBe(false);
     expect(provider.isLikelyDuplicatedCompletedText(second)).toBe(true);
   });
+
+  it('prefers the cloned SC speaker before saturn fallbacks', async () => {
+    const provider = createProvider() as any;
+    provider.socket = { send: jest.fn() };
+    provider.connected = true;
+    provider.sendStartSession = jest.fn(async () => undefined);
+
+    await provider.startSession();
+
+    expect(provider.sendStartSession).toHaveBeenCalledTimes(1);
+    expect(provider.sendStartSession.mock.calls[0][0].tts.speaker).toBe('S_mXRP7Y5M1');
+  });
 });

@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  voiceAssistantConversationThemeClass,
+  voiceAssistantThemeStyle,
+} from '../../../core/theme/mappers';
 import type { UseTextChatResult } from '../runtime/useTextChat';
-import { VOICE_ASSISTANT_STATUS_LABEL } from '../config/constants';
-import { extractAssistantDisplaySegments } from '../service/assistantText';
+import { VoiceAssistantMessageBubble } from './VoiceAssistantMessageBubble';
+import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 
 type VoiceAssistantConversationScreenProps = {
   session: UseTextChatResult;
@@ -23,169 +27,127 @@ export function VoiceAssistantConversationScreen({
   );
 
   async function onSend() {
-    await session.sendText(draft);
+    const clean = draft.trim();
+    if (!clean) {
+      return;
+    }
+    await session.sendText(clean);
     setDraft('');
   }
 
+  const canSend = draft.trim().length > 0;
+
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
-      <View className="flex-1 px-4 pb-4 pt-2">
-        <View className="flex-1 overflow-hidden rounded-[32px] border border-amber-200 bg-white" style={styles.shellShadow}>
-          <View className="bg-orange-400 px-5 pb-5 pt-6">
-            <Text className="text-xs font-bold uppercase tracking-[1.8px] text-orange-50">
-              Conversation
-            </Text>
-            <Text className="mt-3 text-4xl font-black leading-[46px] text-white">
-              {activeConversation?.title ?? '默认会话'}
-            </Text>
-            <Text className="mt-3 text-base leading-6 text-orange-50">
-              状态：{VOICE_ASSISTANT_STATUS_LABEL[session.status]}，支持文本输入和跳转到语音页。
-            </Text>
-            <View className="mt-4 flex-row flex-wrap gap-2.5">
-              {onGoHome ? (
-                <TouchableOpacity
-                  className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
-                  onPress={onGoHome}
-                  testID="conversation-go-home-button"
-                >
-                  <Text className="text-sm font-semibold text-white">返回首页</Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                className="rounded-full border border-orange-50/60 bg-orange-50/15 px-4 py-2 active:bg-orange-50/25"
-                onPress={onOpenVoice}
-                testID="conversation-hero-open-voice-button"
-              >
-                <Text className="text-sm font-semibold text-white">切到语音页</Text>
-              </TouchableOpacity>
+    <SafeAreaView edges={['top', 'bottom']} className={voiceAssistantConversationThemeClass.safeArea}>
+      <View className={voiceAssistantConversationThemeClass.screen}>
+        <View className={voiceAssistantConversationThemeClass.header}>
+          <View className={voiceAssistantConversationThemeClass.headerRow}>
+            <TouchableOpacity
+              className={voiceAssistantConversationThemeClass.headerButton}
+              onPress={onGoHome}
+              testID="conversation-go-home-button"
+            >
+              <VoiceAssistantIcon name="back" size={22} color="#111827" />
+            </TouchableOpacity>
+            <View className={voiceAssistantConversationThemeClass.headerCenter}>
+              <Text className={voiceAssistantConversationThemeClass.headerTitle}>
+                {activeConversation?.title ?? '默认会话'}
+              </Text>
+              <Text className={voiceAssistantConversationThemeClass.headerSubtext}>
+                当前为文字对话模式
+              </Text>
             </View>
+            <TouchableOpacity
+              className={voiceAssistantConversationThemeClass.headerButton}
+              onPress={onOpenVoice}
+              testID="conversation-open-voice-button"
+            >
+              <VoiceAssistantIcon name="phone" size={20} color="#111827" />
+            </TouchableOpacity>
           </View>
 
-          <View className="flex-1 px-4 py-4">
-            <View className="flex-row flex-wrap gap-3">
-              <TouchableOpacity
-                className="rounded-full bg-amber-400 px-5 py-3 active:bg-amber-500"
-                onPress={onOpenVoice}
-                testID="conversation-open-voice-button"
-              >
-                <Text className="text-[15px] font-bold text-amber-950">开始通话</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="rounded-full border border-orange-200 bg-orange-50 px-5 py-3 active:bg-orange-100"
-                onPress={session.testS2SConnection}
-                testID="conversation-s2s-test-button"
-              >
-                <Text className="text-[15px] font-semibold text-slate-700">连接测试</Text>
-              </TouchableOpacity>
+          <View className={voiceAssistantConversationThemeClass.modeSwitchRow}>
+            <View className={voiceAssistantConversationThemeClass.modeChipActive}>
+              <VoiceAssistantIcon name="text" size={16} color="#0F172A" />
+              <Text className={voiceAssistantConversationThemeClass.modeChipActiveText}>文字对话</Text>
             </View>
-
-            <View className="mt-4 flex-1 rounded-[28px] border border-orange-100 bg-white">
-              <ScrollView contentContainerStyle={styles.messagesContent} showsVerticalScrollIndicator={false}>
-                {session.messages.length === 0 ? (
-                  <Text className="text-[16px] leading-7 text-slate-500">
-                    还没有消息，先输入一句或者去语音页说话。
-                  </Text>
-                ) : null}
-                {session.messages.map((message) => {
-                  const isAssistant = message.role === 'assistant';
-                  return (
-                    <View
-                      key={message.id}
-                      className={
-                        isAssistant
-                          ? 'mb-3 self-start rounded-[24px] rounded-bl-md border border-amber-200 bg-amber-50 px-4 py-3'
-                          : 'mb-3 self-end rounded-[24px] rounded-br-md bg-slate-900 px-4 py-3'
-                      }
-                      style={isAssistant ? styles.assistantBubbleMaxWidth : styles.userBubbleMaxWidth}
-                    >
-                      <Text
-                        className={
-                          isAssistant
-                            ? 'text-xs font-semibold uppercase tracking-[1px] text-slate-500'
-                            : 'text-xs font-semibold uppercase tracking-[1px] text-slate-300'
-                        }
-                      >
-                        {isAssistant ? '助手' : '你'}
-                      </Text>
-                      {isAssistant ? (
-                        <Text className="mt-2 text-[17px] leading-7 text-slate-800">
-                          {extractAssistantDisplaySegments(message.content).map((segment, index) => (
-                            <Text
-                              key={`${message.id}-${index}`}
-                              className={
-                                segment.narration
-                                  ? 'text-[16px] leading-7 text-slate-400'
-                                  : 'text-[17px] leading-7 text-slate-800'
-                              }
-                            >
-                              {segment.narration ? `（${segment.text}）` : segment.text}
-                            </Text>
-                          ))}
-                        </Text>
-                      ) : (
-                        <Text className="mt-2 text-[17px] leading-7 text-white">{message.content}</Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </View>
+            <TouchableOpacity className={voiceAssistantConversationThemeClass.modeChip} onPress={onOpenVoice}>
+              <VoiceAssistantIcon name="phone" size={16} color="#475569" />
+              <Text className={voiceAssistantConversationThemeClass.modeChipText}>语音通话</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View
-          className="mt-3 flex-row items-center rounded-[28px] border border-orange-200 bg-white px-3 py-3"
-          style={styles.dockShadow}
+        <ScrollView
+          className={voiceAssistantConversationThemeClass.messageArea}
+          contentContainerStyle={voiceAssistantThemeStyle.conversationScrollContent}
+          showsVerticalScrollIndicator={false}
         >
-          <TextInput
-            className="flex-1 px-3 py-2 text-[17px] text-slate-900"
-            onChangeText={setDraft}
-            placeholder="输入你的问题"
-            placeholderTextColor="#94A3B8"
-            testID="conversation-message-input"
-            value={draft}
-          />
+          {session.messages.length === 0 ? (
+            <View className={voiceAssistantConversationThemeClass.emptyBubble}>
+              <Text className={voiceAssistantConversationThemeClass.emptyBubbleText}>
+                你好呀，有什么想聊的吗？
+              </Text>
+            </View>
+          ) : null}
+          {session.messages.map((message) => (
+            <VoiceAssistantMessageBubble key={message.id} message={message} />
+          ))}
+        </ScrollView>
+
+        <View className={voiceAssistantConversationThemeClass.composerMetaRow}>
+          <Text className={voiceAssistantConversationThemeClass.composerMetaText}>
+            语音模式下会自动听说；文字模式下可直接输入发送。
+          </Text>
           <TouchableOpacity
-            className="ml-3 rounded-full bg-rose-500 px-5 py-3 active:bg-rose-600"
-            onPress={onSend}
-            testID="conversation-send-button"
+            className={voiceAssistantConversationThemeClass.connectionTextButton}
+            onPress={session.testS2SConnection}
+            testID="conversation-s2s-test-button"
           >
-            <Text className="text-base font-bold text-white">发送</Text>
+            <Text className={voiceAssistantConversationThemeClass.connectionTextButtonText}>连接测试</Text>
           </TouchableOpacity>
+        </View>
+
+        <View className={voiceAssistantConversationThemeClass.composerDock}>
+          <TouchableOpacity className={voiceAssistantConversationThemeClass.iconButton}>
+            <VoiceAssistantIcon name="camera" size={23} color="#111827" />
+          </TouchableOpacity>
+
+          <View className={voiceAssistantConversationThemeClass.inputShell}>
+            <TextInput
+              className={voiceAssistantConversationThemeClass.inputField}
+              onChangeText={setDraft}
+              placeholder="输入消息"
+              placeholderTextColor="#9CA3AF"
+              testID="conversation-message-input"
+              value={draft}
+            />
+          </View>
+
+          <TouchableOpacity
+            className={voiceAssistantConversationThemeClass.iconButtonSoft}
+            onPress={onOpenVoice}
+          >
+            <VoiceAssistantIcon name="mic" size={22} color="#111827" />
+          </TouchableOpacity>
+
+          {canSend ? (
+            <TouchableOpacity
+              className={voiceAssistantConversationThemeClass.primaryComposerAction}
+              onPress={onSend}
+              testID="conversation-send-button"
+            >
+              <Text className={voiceAssistantConversationThemeClass.primaryComposerActionText}>发送</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity className={voiceAssistantConversationThemeClass.iconButton}>
+              <View className="h-8 w-8 items-center justify-center rounded-full border border-slate-900">
+                <VoiceAssistantIcon name="plus" size={18} color="#111827" />
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFF4E8',
-  },
-  shellShadow: {
-    shadowColor: '#C9731F',
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
-  },
-  messagesContent: {
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 22,
-  },
-  assistantBubbleMaxWidth: {
-    maxWidth: '92%',
-  },
-  userBubbleMaxWidth: {
-    maxWidth: '88%',
-  },
-  dockShadow: {
-    shadowColor: '#D97706',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 2,
-  },
-});
