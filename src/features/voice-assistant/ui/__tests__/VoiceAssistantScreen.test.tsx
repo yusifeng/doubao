@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantScreen } from '../VoiceAssistantScreen';
 
@@ -32,31 +33,38 @@ function createSession(): UseTextChatResult {
 }
 
 describe('VoiceAssistantScreen', () => {
-  it('renders voice scene shell and current conversation', async () => {
-    render(<VoiceAssistantScreen />);
+  function renderScreen(ui: React.ReactElement) {
+    return render(<SafeAreaProvider>{ui}</SafeAreaProvider>);
+  }
+
+  it('renders the immersive voice shell controls', async () => {
+    renderScreen(<VoiceAssistantScreen />);
 
     await waitFor(() => {
-      expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
+      expect(screen.getByText('选择情景')).toBeTruthy();
     });
     expect(screen.getByTestId('voice-toggle-button')).toBeTruthy();
     expect(screen.getByTestId('voice-placeholder-spark-button')).toBeTruthy();
     expect(screen.getByTestId('voice-placeholder-video-button')).toBeTruthy();
     expect(screen.getByTestId('voice-exit-button')).toBeTruthy();
+    expect(screen.queryByTestId('s2s-test-button')).toBeNull();
   });
 
-  it('shows latest round area after bootstrap', async () => {
-    render(<VoiceAssistantScreen />);
+  it('keeps the avatar display mode lightweight by default', async () => {
+    renderScreen(<VoiceAssistantScreen />);
 
-    expect(await screen.findByText('当前状态')).toBeTruthy();
-    expect(screen.getByText(/切到语音模式后会自动开始收听/)).toBeTruthy();
+    expect(await screen.findByText('内容由 AI 生成')).toBeTruthy();
+    expect(screen.queryByText('最近消息')).toBeNull();
+    expect(screen.queryByText(/当前会话正在持续收听/)).toBeNull();
+    expect(screen.getByText('正在听...')).toBeTruthy();
   });
 
   it('supports pausing and resuming voice capture from the first control', async () => {
     const session = createSession();
 
-    render(<VoiceAssistantScreen session={session} />);
+    renderScreen(<VoiceAssistantScreen session={session} />);
     await waitFor(() => {
-      expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
+      expect(screen.getByText('选择情景')).toBeTruthy();
     });
 
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
@@ -65,48 +73,68 @@ describe('VoiceAssistantScreen', () => {
     expect(session.toggleVoice).toHaveBeenCalledTimes(2);
   });
 
-  it('delegates connection test to the session hook', async () => {
-    const session = createSession();
-
-    render(<VoiceAssistantScreen session={session} />);
-    await waitFor(() => {
-      expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
-    });
-
-    fireEvent.press(screen.getByTestId('s2s-test-button'));
-    expect(session.testS2SConnection).toHaveBeenCalledTimes(1);
-  });
-
   it('renders drawer and exit actions when callbacks exist', async () => {
     const onExitVoice = jest.fn();
     const onOpenDrawer = jest.fn();
+    const onToggleDisplayMode = jest.fn();
 
-    render(
+    renderScreen(
       <VoiceAssistantScreen
         session={createSession()}
         onExitVoice={onExitVoice}
         onOpenDrawer={onOpenDrawer}
+        onToggleDisplayMode={onToggleDisplayMode}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
+      expect(screen.getByText('选择情景')).toBeTruthy();
     });
     fireEvent.press(screen.getByTestId('voice-open-drawer-button'));
     fireEvent.press(screen.getByTestId('voice-switch-text-button'));
     fireEvent.press(screen.getByTestId('voice-exit-button'));
 
     expect(onOpenDrawer).toHaveBeenCalledTimes(1);
-    expect(onExitVoice).toHaveBeenCalledTimes(2);
+    expect(onToggleDisplayMode).toHaveBeenCalledTimes(1);
+    expect(onExitVoice).toHaveBeenCalledTimes(1);
   });
 
   it('auto starts voice when mounted from the conversation surface', async () => {
     const session = createSession();
 
-    render(<VoiceAssistantScreen session={session} autoStartOnMount />);
+    renderScreen(<VoiceAssistantScreen session={session} autoStartOnMount />);
 
     await waitFor(() => {
       expect(session.toggleVoice).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('renders dialogue display mode with recent lines instead of avatar strip', async () => {
+    const session = createSession();
+    session.messages = [
+      {
+        id: 'msg-1',
+        conversationId: 'conv-1',
+        role: 'assistant',
+        content: '豆包你好。',
+        type: 'text',
+        createdAt: Date.now(),
+      },
+      {
+        id: 'msg-2',
+        conversationId: 'conv-1',
+        role: 'user',
+        content: '你好呀，今天有什么想聊的吗？',
+        type: 'text',
+        createdAt: Date.now() + 1,
+      },
+    ];
+
+    renderScreen(<VoiceAssistantScreen session={session} displayMode="dialogue" />);
+
+    expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
+    expect(await screen.findByText('豆包你好。')).toBeTruthy();
+    expect(screen.getByText('你好呀，今天有什么想聊的吗？')).toBeTruthy();
+    expect(screen.queryByText('实时通话未开启')).toBeTruthy();
   });
 });

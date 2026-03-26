@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -26,6 +26,7 @@ export function VoiceAssistantConversationScreen({
   onOpenDrawer,
 }: VoiceAssistantConversationScreenProps) {
   const [draft, setDraft] = useState('');
+  const [voiceDisplayMode, setVoiceDisplayMode] = useState<'avatar' | 'dialogue'>('avatar');
 
   const activeConversation = useMemo(
     () => session.conversations.find((conversation) => conversation.id === session.activeConversationId) ?? null,
@@ -33,6 +34,12 @@ export function VoiceAssistantConversationScreen({
   );
 
   const canSend = draft.trim().length > 0;
+
+  useEffect(() => {
+    if (mode !== 'voice') {
+      setVoiceDisplayMode('avatar');
+    }
+  }, [mode]);
 
   async function onSend() {
     const clean = draft.trim();
@@ -130,6 +137,10 @@ export function VoiceAssistantConversationScreen({
               onExitVoice={() => onChangeMode('text')}
               onOpenDrawer={onOpenDrawer}
               autoStartOnMount
+              displayMode={voiceDisplayMode}
+              onToggleDisplayMode={() => {
+                setVoiceDisplayMode((current) => (current === 'avatar' ? 'dialogue' : 'avatar'));
+              }}
             />
           </View>
         ) : null}

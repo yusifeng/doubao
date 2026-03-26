@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantConversationScreen } from '../VoiceAssistantConversationScreen';
 
@@ -48,8 +49,12 @@ function createSession(): UseTextChatResult {
 }
 
 describe('VoiceAssistantConversationScreen', () => {
+  function renderScreen(ui: React.ReactElement) {
+    return render(<SafeAreaProvider>{ui}</SafeAreaProvider>);
+  }
+
   it('renders chat mode shell and messages', () => {
-    render(
+    renderScreen(
       <VoiceAssistantConversationScreen
         session={createSession()}
         mode="text"
@@ -69,7 +74,7 @@ describe('VoiceAssistantConversationScreen', () => {
     const session = createSession();
     const onChangeMode = jest.fn();
 
-    render(
+    renderScreen(
       <VoiceAssistantConversationScreen
         session={session}
         mode="text"
@@ -91,7 +96,7 @@ describe('VoiceAssistantConversationScreen', () => {
   it('delegates drawer opening to the navigator shell', () => {
     const onOpenDrawer = jest.fn();
 
-    render(
+    renderScreen(
       <VoiceAssistantConversationScreen
         session={createSession()}
         mode="text"
@@ -108,7 +113,7 @@ describe('VoiceAssistantConversationScreen', () => {
     const onChangeMode = jest.fn();
     const session = createSession();
 
-    render(
+    renderScreen(
       <VoiceAssistantConversationScreen
         session={session}
         mode="voice"
@@ -122,6 +127,8 @@ describe('VoiceAssistantConversationScreen', () => {
       expect(session.toggleVoice).toHaveBeenCalledTimes(1);
     });
     fireEvent.press(screen.getByTestId('voice-switch-text-button'));
+    expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
+    expect(screen.getAllByText('你好，我在。').length).toBeGreaterThan(0);
     fireEvent.press(screen.getByTestId('voice-exit-button'));
 
     await waitFor(() => {
