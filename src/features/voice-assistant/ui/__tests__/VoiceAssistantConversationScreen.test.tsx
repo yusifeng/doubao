@@ -25,6 +25,8 @@ function createSession(): UseTextChatResult {
         createdAt: Date.now(),
       },
     ],
+    liveUserTranscript: '',
+    pendingAssistantReply: '',
     sendText: jest.fn().mockResolvedValue(undefined),
     isVoiceActive: false,
     toggleVoice: jest.fn().mockResolvedValue(undefined),

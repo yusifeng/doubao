@@ -14,6 +14,7 @@ const mockDisconnect = jest.fn<Promise<void>, []>();
 const mockSendAudioFrame = jest.fn<Promise<void>, [Uint8Array]>();
 const mockWaitForAssistantAudioChunk = jest.fn<Promise<Uint8Array | null>, [number]>();
 const mockWaitForAssistantText = jest.fn<Promise<string | null>, [number]>();
+const mockGenerateReplyStream = jest.fn();
 let latestCaptureCallback: ((frame: Uint8Array) => Promise<void> | void) | undefined;
 
 jest.mock('../providers', () => ({
@@ -41,6 +42,21 @@ jest.mock('../providers', () => ({
       sendTextQuery: jest.fn(),
       waitForAssistantAudioChunk: mockWaitForAssistantAudioChunk,
       waitForAssistantText: mockWaitForAssistantText,
+    },
+    dialogEngine: {
+      isSupported: () => false,
+      prepare: jest.fn(),
+      startConversation: jest.fn(),
+      stopConversation: jest.fn(),
+      sendTextQuery: jest.fn(),
+      useClientTriggeredTts: jest.fn(),
+      useServerTriggeredTts: jest.fn(),
+      streamClientTtsText: jest.fn(),
+      setListener: jest.fn(),
+      destroy: jest.fn(),
+    },
+    reply: {
+      generateReplyStream: mockGenerateReplyStream,
     },
     observability: {
       log: jest.fn(),
@@ -80,6 +96,9 @@ describe('useTextChat realtime lifecycle lock', () => {
     mockSendAudioFrame.mockResolvedValue();
     mockWaitForAssistantAudioChunk.mockResolvedValue(null);
     mockWaitForAssistantText.mockResolvedValue(null);
+    mockGenerateReplyStream.mockImplementation(async function* generateReplyStream() {
+      yield '测试回复';
+    });
   });
 
   afterEach(() => {

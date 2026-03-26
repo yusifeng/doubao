@@ -9,6 +9,7 @@
 - V1 优先可用与可演进，V2 再增强安全与平台化能力。
 - 建立样式 Tokenizer Design，保证视觉语言一致且可扩展。
 - V1 默认采用稳定语音链路：`ASR -> sendTextQuery -> TTS`，实时 PCM 链路保留为实验开关。
+- Android 新阶段切换到官方 Dialog SDK 托管 ASR/TTS/AEC/播放。当前默认对齐官方 `DialogActivity`：使用默认工作模式与平台自动回复；`ReplyProvider` 作为后续接入自有 LLM 的保留扩展点。
 
 ## 2. 总体架构
 
@@ -42,6 +43,8 @@ UI(Screen/Component)
 - `src/core/providers/storage`
 - `src/core/providers/s2s`
 - `src/core/providers/audio`
+- `src/core/providers/dialog-engine`
+- `src/core/providers/reply`
 - `src/core/providers/observability`
 
 建议新增样式 token 模块：
@@ -145,6 +148,49 @@ V1 落地策略：
 日志最小字段建议：
 
 - `sessionId`, `conversationId`, `phase`, `latencyMs`, `errorCode`, `errorMessage`
+
+## 4.5 DialogEngineProvider（Android 官方引擎）
+
+Android 平台新增 `DialogEngineProvider`，封装火山 Dialog SDK：
+
+- `prepare()`
+- `startConversation(config)`
+- `stopConversation()`
+- `sendTextQuery(text)`
+- `useClientTriggeredTts()`
+- `streamClientTtsText({ start, content, end })`
+- `setListener(listener)`
+- `destroy()`
+
+职责：
+
+- 原生录音 / AEC / ASR / TTS / 播放
+- 将 SDK 回调映射为统一 JS 事件：
+  - `engine_start`
+  - `engine_stop`
+  - `error`
+  - `asr_start`
+  - `asr_partial`
+  - `asr_final`
+  - `chat_partial`
+  - `chat_final`
+
+Android 运行时不再依赖手写 PCM 上下行与本地音频能量推测来完成主要语音闭环。
+
+Android SDK 运行前置环境：
+
+- `EXPO_PUBLIC_S2S_APP_ID`
+- `EXPO_PUBLIC_S2S_ACCESS_TOKEN`
+- `EXPO_PUBLIC_S2S_WS_URL`
+- `EXPO_PUBLIC_S2S_APP_KEY`（可选；未显式提供时沿用当前 dialog 资源默认 app key）
+
+## 4.6 ReplyProvider（业务回复来源）
+
+`ReplyProvider` 负责“回复文本从哪里来”，与 Android SDK 解耦。当前 Android 默认走平台自动回复，并对齐官方 `DialogActivity` 的默认工作模式；`ReplyProvider` 保留为未来切自有 LLM 的扩展口：
+
+- `generateReplyStream(input)`
+
+当前仓库先以默认实现打通本地链路，后续可替换成真实业务 LLM 或服务端接口。这样 Android SDK 负责听和说，业务侧只负责“生成什么内容”。
 
 ## 4.5 Style Tokenizer（样式令牌体系）
 

@@ -27,6 +27,16 @@ function VoiceAssistantScreenContent({
   const latestMessage = session.messages[session.messages.length - 1]?.content;
   const isVoiceRunning = session.isVoiceActive;
   const statusText = isVoiceRunning ? session.voiceRuntimeHint : VOICE_ASSISTANT_STATUS_LABEL[session.status];
+  const transcriptLabel = session.pendingAssistantReply
+    ? '助手草稿'
+    : session.liveUserTranscript
+    ? '实时转写'
+    : '当前会话';
+  const transcriptText =
+    session.pendingAssistantReply ||
+    session.liveUserTranscript ||
+    latestMessage ||
+    '轻触下方按钮开始实时语音通话。你说完后，页面会先显示“已发送，等待回复”，再等待模型回话。';
 
   return (
     <SafeAreaView edges={['top', 'bottom']} className={voiceAssistantVoiceThemeClass.safeArea}>
@@ -83,12 +93,12 @@ function VoiceAssistantScreenContent({
             className={voiceAssistantVoiceThemeClass.transcriptCard}
             style={voiceAssistantThemeStyle.voiceTranscriptShadow}
           >
-            <Text className={voiceAssistantVoiceThemeClass.transcriptLabel}>当前会话</Text>
+            <Text className={voiceAssistantVoiceThemeClass.transcriptLabel}>{transcriptLabel}</Text>
             <Text className={voiceAssistantVoiceThemeClass.transcriptTitle}>
               {activeConversation?.title ?? '默认会话'}
             </Text>
             <Text className={voiceAssistantVoiceThemeClass.transcriptBody}>
-              {latestMessage ?? '轻触下方按钮开始实时语音通话。你说完后，页面会先显示“已发送，等待回复”，再等待模型回话。'}
+              {transcriptText}
             </Text>
             <Text className="mt-2 text-[13px] leading-5 text-slate-400">{session.connectivityHint}</Text>
             <TouchableOpacity className="mt-3 self-start rounded-full bg-white/70 px-4 py-2" onPress={session.testS2SConnection} testID="s2s-test-button">

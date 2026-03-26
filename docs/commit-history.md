@@ -247,3 +247,50 @@
   - Team may forget to follow the template details when rushing.
 - Rollback:
   - Remove the commit-history section from `AGENTS.md` and delete `docs/commit-history.md`.
+
+## 2026-03-26 (Asia/Shanghai) - android-dialog-sdk-cutover
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `android/app/build.gradle`
+  - `android/app/src/main/java/com/anonymous/mydoubao2/MainApplication.kt`
+  - `android/app/src/main/java/com/anonymous/mydoubao2/dialog/RNDialogEngineModule.kt`
+  - `android/app/src/main/java/com/anonymous/mydoubao2/dialog/RNDialogEnginePackage.kt`
+  - `ARCHITECTURE.md`
+  - `docs/PLANS.md`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+  - `docs/exec-plans/active/plan-android-dialog-sdk-cutover.md`
+  - `src/core/providers/dialog-engine/*`
+  - `src/core/providers/reply/types.ts`
+  - `src/features/voice-assistant/config/constants.ts`
+  - `src/features/voice-assistant/config/env.ts`
+  - `src/features/voice-assistant/runtime/providers.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/providers.test.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/service/localReplyProvider.ts`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/*`
+- Summary:
+  - Added Android Dialog SDK native bridge (`RNDialogEngine`) and registered it in the Android app so Android can use the official Dialog engine for recorder/player/AEC/ASR/TTS.
+  - Introduced `DialogEngineProvider` and provider routing so Android uses the Dialog SDK path while non-Android platforms keep the existing JS audio + websocket path.
+  - Reworked `useTextChat` around Android Dialog SDK events (`engine_start`, `engine_stop`, `asr_*`, `chat_*`) and added real-time transcript / final transcript handling for voice turns.
+  - Hardened Android lifecycle handling by ignoring stale session events, resetting call state on matching `engine_stop`, and avoiding duplicate or dropped assistant text when partial chat events stream in.
+  - Restored Android default platform-reply behavior to align with the official `DialogActivity` demo and removed the temporary local-stub reply behavior from the Android default path.
+  - Updated voice screen rendering and tests so live user transcript, pending assistant reply, and final persisted messages reflect the Dialog SDK flow.
+  - Synced architecture and design docs to describe the Android Dialog SDK cutover, Android-specific provider boundaries, and current reply-source behavior.
+- Tests:
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings)
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand` (pass, 11 suites / 53 tests)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx --runInBand` (pass)
+  - `./gradlew :app:assembleDebug` (pass)
+  - `./gradlew :app:installDebug` (pass on Android device during smoke loop)
+- Risk:
+  - Android now depends on the Dialog SDK native lifecycle; any SDK event-order differences on specific OEM devices can still surface during multi-turn voice sessions.
+  - The default Android reply path currently trusts platform-generated reply text; future custom-LLM cutover will need a dedicated `ReplyProvider` implementation rather than the temporary local stub.
+  - The custom speaker `S_mXRP7Y5M1` still depends on backend resource alignment; `resource id mismatched with speaker related resource` remains a server-side configuration blocker if it reappears.
+- Rollback:
+  - Revert the Android Dialog SDK provider/native bridge files and restore Android routing back to `WebSocketS2SProvider + ExpoRealtimeAudioProvider` in `runtime/providers.ts` and `useTextChat.ts`.

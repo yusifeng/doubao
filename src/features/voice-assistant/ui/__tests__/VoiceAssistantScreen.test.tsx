@@ -16,6 +16,8 @@ function createSession(): UseTextChatResult {
     ],
     activeConversationId: 'conv-1',
     messages: [],
+    liveUserTranscript: '',
+    pendingAssistantReply: '',
     sendText: jest.fn().mockResolvedValue(undefined),
     isVoiceActive: false,
     toggleVoice: jest.fn().mockResolvedValue(undefined),

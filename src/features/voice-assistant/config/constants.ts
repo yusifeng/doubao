@@ -1,6 +1,9 @@
 import type { ConversationStatus } from '../types/model';
 
 export const VOICE_ASSISTANT_DEFAULT_STATUS: ConversationStatus = 'idle';
+export const VOICE_ASSISTANT_DIALOG_MODEL = '2.2.0.0';
+export const VOICE_ASSISTANT_DIALOG_SPEAKER = 'S_mXRP7Y5M1';
+export const VOICE_ASSISTANT_DIALOG_BOT_NAME = '江户川柯南';
 
 export const VOICE_ASSISTANT_STATUS_LABEL: Record<ConversationStatus, string> = {
   idle: '待命中',

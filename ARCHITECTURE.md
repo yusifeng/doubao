@@ -32,6 +32,8 @@
   - `StorageProvider`（本地持久化，如 SQLite）
   - `S2SProvider`（语音对话网关）
   - `AudioProvider`（采集与播放）
+  - `DialogEngineProvider`（Android 官方 Dialog SDK 语音引擎）
+  - `ReplyProvider`（业务侧 LLM / 回复生成）
   - `ObservabilityProvider`（结构化日志）
 
 ## 当前代码映射（迁移期）
@@ -47,6 +49,8 @@
 - 会话状态由 feature runtime 统一维护，再经路由页面消费；
 - 为避免 Expo Router 将 `src/app` 误判为路由根目录，非路由级 app 基础设施统一收口到 `src/core/`；
 - 新增业务能力优先落入 `src/features/`，不要把业务逻辑写回 `app/`。
+- Android 语音主链优先通过 `DialogEngineProvider` 暴露统一事件流；JS runtime 不直接依赖 Android 原生录音、播放、AEC 细节。
+- `ReplyProvider` 仍保留为未来接入自有 LLM 的扩展点；当前 Android SDK 默认走服务端自动回复，SDK 负责 ASR/TTS/播放器。
 
 ## Expo 运行路径
 
