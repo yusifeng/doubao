@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -11,32 +11,73 @@ import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 
 type VoiceAssistantScreenContentProps = {
   session: UseTextChatResult;
-  onGoConversation?: () => void;
-  onGoHome?: () => void;
+  onExitVoice?: () => void;
+  onOpenDrawer?: () => void;
+  autoStartOnMount?: boolean;
 };
 
 function VoiceAssistantScreenContent({
   session,
-  onGoConversation,
-  onGoHome,
+  onExitVoice,
+  onOpenDrawer,
+  autoStartOnMount = false,
 }: VoiceAssistantScreenContentProps) {
+  const autoStartedRef = useRef(false);
+  const [voiceInputMuted, setVoiceInputMuted] = useState(false);
   const activeConversation = useMemo(
     () => session.conversations.find((conversation) => conversation.id === session.activeConversationId),
     [session.activeConversationId, session.conversations],
   );
   const latestMessage = session.messages[session.messages.length - 1]?.content;
   const isVoiceRunning = session.isVoiceActive;
-  const statusText = isVoiceRunning ? session.voiceRuntimeHint : VOICE_ASSISTANT_STATUS_LABEL[session.status];
+  const statusText = voiceInputMuted
+    ? '已暂停接收语音'
+    : isVoiceRunning
+    ? session.voiceRuntimeHint
+    : VOICE_ASSISTANT_STATUS_LABEL[session.status];
   const transcriptLabel = session.pendingAssistantReply
-    ? '助手草稿'
+    ? '助手回复中'
     : session.liveUserTranscript
     ? '实时转写'
-    : '当前会话';
+    : latestMessage
+    ? '最近消息'
+    : '当前状态';
   const transcriptText =
     session.pendingAssistantReply ||
     session.liveUserTranscript ||
     latestMessage ||
-    '轻触下方按钮开始实时语音通话。你说完后，页面会先显示“已发送，等待回复”，再等待模型回话。';
+    '切到语音模式后会自动开始收听，语音结果会继续回到当前会话。';
+
+  useEffect(() => {
+    if (!isVoiceRunning) {
+      return;
+    }
+    setVoiceInputMuted(false);
+  }, [isVoiceRunning]);
+
+  useEffect(() => {
+    if (!autoStartOnMount || autoStartedRef.current || session.isVoiceActive) {
+      return;
+    }
+    autoStartedRef.current = true;
+    void session.toggleVoice();
+  }, [autoStartOnMount, session]);
+
+  const handleMicControl = async () => {
+    setVoiceInputMuted(isVoiceRunning);
+    await session.toggleVoice();
+  };
+
+  const handleExitVoice = async () => {
+    if (session.isVoiceActive) {
+      await session.toggleVoice();
+    }
+    setVoiceInputMuted(false);
+    onExitVoice?.();
+  };
+
+  const showDebugButton =
+    typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
 
   return (
     <SafeAreaView edges={['top', 'bottom']} className={voiceAssistantVoiceThemeClass.safeArea}>
@@ -48,21 +89,25 @@ function VoiceAssistantScreenContent({
         <View className={voiceAssistantVoiceThemeClass.header}>
           <TouchableOpacity
             className={voiceAssistantVoiceThemeClass.headerButton}
-            onPress={onGoHome}
-            testID="voice-go-home-button"
+            onPress={onOpenDrawer}
+            testID="voice-open-drawer-button"
           >
             <VoiceAssistantIcon name="menu" size={22} color="#1F2937" />
           </TouchableOpacity>
           <View className={voiceAssistantVoiceThemeClass.headerCenter}>
             <VoiceAssistantIcon name="grid" size={18} color="#1F2937" />
-            <Text className={voiceAssistantVoiceThemeClass.headerTitle}>选择情景</Text>
+            <Text className={voiceAssistantVoiceThemeClass.headerTitle}>
+              {activeConversation?.title ?? '默认会话'}
+            </Text>
           </View>
           <TouchableOpacity
             className={voiceAssistantVoiceThemeClass.textModeButton}
-            onPress={onGoConversation}
-            testID="voice-go-conversation-button"
+            onPress={() => {
+              void handleExitVoice();
+            }}
+            testID="voice-switch-text-button"
           >
-            <VoiceAssistantIcon name="text" size={20} color="#1F2937" />
+            <Text className={voiceAssistantVoiceThemeClass.textModeButtonLabel}>字</Text>
           </TouchableOpacity>
         </View>
 
@@ -87,44 +132,80 @@ function VoiceAssistantScreenContent({
             <View className={voiceAssistantVoiceThemeClass.statusDot} />
           </View>
           <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
-          <Text className={voiceAssistantVoiceThemeClass.metaText}>{session.voiceModeLabel}</Text>
 
           <View
-            className={voiceAssistantVoiceThemeClass.transcriptCard}
+            className={voiceAssistantVoiceThemeClass.transcriptStrip}
             style={voiceAssistantThemeStyle.voiceTranscriptShadow}
           >
-            <Text className={voiceAssistantVoiceThemeClass.transcriptLabel}>{transcriptLabel}</Text>
-            <Text className={voiceAssistantVoiceThemeClass.transcriptTitle}>
-              {activeConversation?.title ?? '默认会话'}
-            </Text>
-            <Text className={voiceAssistantVoiceThemeClass.transcriptBody}>
-              {transcriptText}
-            </Text>
-            <Text className="mt-2 text-[13px] leading-5 text-slate-400">{session.connectivityHint}</Text>
-            <TouchableOpacity className="mt-3 self-start rounded-full bg-white/70 px-4 py-2" onPress={session.testS2SConnection} testID="s2s-test-button">
-              <Text className="text-[13px] font-medium text-slate-700">连接测试</Text>
-            </TouchableOpacity>
+            <Text className={voiceAssistantVoiceThemeClass.transcriptStripLabel}>{transcriptLabel}</Text>
+            <Text className={voiceAssistantVoiceThemeClass.transcriptStripBody}>{transcriptText}</Text>
           </View>
         </View>
 
         <View className={voiceAssistantVoiceThemeClass.footer}>
           <View className={voiceAssistantVoiceThemeClass.controlsRow}>
             <TouchableOpacity
-              className={voiceAssistantVoiceThemeClass.secondaryControl}
-              onPress={onGoConversation}
-              testID="voice-go-conversation-button-secondary"
-            >
-              <VoiceAssistantIcon name="text" size={24} color="#374151" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              className={isVoiceRunning ? voiceAssistantVoiceThemeClass.dangerControl : voiceAssistantVoiceThemeClass.primaryControl}
-              onPress={session.toggleVoice}
+              className={
+                isVoiceRunning
+                  ? voiceAssistantVoiceThemeClass.controlShell
+                  : voiceAssistantVoiceThemeClass.controlShellMuted
+              }
+              onPress={() => {
+                void handleMicControl();
+              }}
               testID="voice-toggle-button"
             >
-              <VoiceAssistantIcon name={isVoiceRunning ? 'close' : 'mic'} size={30} color={isVoiceRunning ? '#EF4444' : '#374151'} />
+              <VoiceAssistantIcon
+                name="mic"
+                size={26}
+                color={isVoiceRunning ? '#111827' : '#FFFFFF'}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={voiceAssistantVoiceThemeClass.controlShellPlaceholder}
+              disabled
+              testID="voice-placeholder-spark-button"
+            >
+              <VoiceAssistantIcon name="spark" size={24} color="#4B5563" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={voiceAssistantVoiceThemeClass.controlShellPlaceholder}
+              disabled
+              testID="voice-placeholder-video-button"
+            >
+              <VoiceAssistantIcon name="video" size={24} color="#111827" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className={voiceAssistantVoiceThemeClass.controlShellDanger}
+              onPress={() => {
+                void handleExitVoice();
+              }}
+              testID="voice-exit-button"
+            >
+              <VoiceAssistantIcon name="close" size={28} color="#EF4444" />
             </TouchableOpacity>
           </View>
-          <Text className={voiceAssistantVoiceThemeClass.controlCaption}>{session.voiceToggleLabel}</Text>
+
+          <Text className={voiceAssistantVoiceThemeClass.controlCaption}>
+            {voiceInputMuted
+              ? '当前已暂停接收语音，再点一次麦克风继续'
+              : isVoiceRunning
+              ? '当前会话正在持续收听，你可以直接开口说话'
+              : '正在准备开始收听'}
+          </Text>
+
+          {showDebugButton ? (
+            <View className={voiceAssistantVoiceThemeClass.debugRow}>
+              <TouchableOpacity
+                className={voiceAssistantVoiceThemeClass.debugButton}
+                onPress={session.testS2SConnection}
+                testID="s2s-test-button"
+              >
+                <Text className={voiceAssistantVoiceThemeClass.debugButtonText}>连接测试</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <Text className={voiceAssistantVoiceThemeClass.attribution}>内容由 AI 生成</Text>
         </View>
       </View>
@@ -139,21 +220,24 @@ export function VoiceAssistantScreenStandalone() {
 
 type VoiceAssistantScreenProps = {
   session?: UseTextChatResult;
-  onGoConversation?: () => void;
-  onGoHome?: () => void;
+  onExitVoice?: () => void;
+  onOpenDrawer?: () => void;
+  autoStartOnMount?: boolean;
 };
 
 export function VoiceAssistantScreen({
   session,
-  onGoConversation,
-  onGoHome,
+  onExitVoice,
+  onOpenDrawer,
+  autoStartOnMount,
 }: VoiceAssistantScreenProps) {
   if (session) {
     return (
       <VoiceAssistantScreenContent
         session={session}
-        onGoConversation={onGoConversation}
-        onGoHome={onGoHome}
+        onExitVoice={onExitVoice}
+        onOpenDrawer={onOpenDrawer}
+        autoStartOnMount={autoStartOnMount}
       />
     );
   }

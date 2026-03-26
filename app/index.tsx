@@ -1,19 +1,19 @@
-import { router } from 'expo-router';
-import { VoiceAssistantHomeScreen } from '../src/features/voice-assistant/ui/VoiceAssistantHomeScreen';
+import { Redirect } from 'expo-router';
+import { View } from 'react-native';
 import { useVoiceAssistantRuntime } from '../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 
 export default function HomeRoute() {
   const session = useVoiceAssistantRuntime();
-  const conversationId = session.activeConversationId ?? 'conv-1';
+
+  if (!session.activeConversationId) {
+    return <View className="flex-1 bg-[#FBFCFE]" testID="home-route-loading" />;
+  }
 
   return (
-    <VoiceAssistantHomeScreen
-      session={session}
-      onOpenConversation={() => {
-        router.push(`/conversation/${conversationId}`);
-      }}
-      onOpenVoice={() => {
-        router.push(`/voice/${conversationId}`);
+    <Redirect
+      href={{
+        pathname: '/conversation/[conversationId]',
+        params: { conversationId: session.activeConversationId, mode: 'text' },
       }}
     />
   );

@@ -8,23 +8,31 @@ import {
 import type { UseTextChatResult } from '../runtime/useTextChat';
 import { VoiceAssistantMessageBubble } from './VoiceAssistantMessageBubble';
 import { VoiceAssistantIcon } from './VoiceAssistantIcon';
+import { VoiceAssistantScreen } from './VoiceAssistantScreen';
+
+type ConversationScreenMode = 'text' | 'voice';
 
 type VoiceAssistantConversationScreenProps = {
   session: UseTextChatResult;
-  onOpenVoice: () => void;
-  onGoHome?: () => void;
+  mode: ConversationScreenMode;
+  onChangeMode: (mode: ConversationScreenMode) => void;
+  onOpenDrawer: () => void;
 };
 
 export function VoiceAssistantConversationScreen({
   session,
-  onOpenVoice,
-  onGoHome,
+  mode,
+  onChangeMode,
+  onOpenDrawer,
 }: VoiceAssistantConversationScreenProps) {
   const [draft, setDraft] = useState('');
+
   const activeConversation = useMemo(
-    () => session.conversations.find((conversation) => conversation.id === session.activeConversationId),
+    () => session.conversations.find((conversation) => conversation.id === session.activeConversationId) ?? null,
     [session.activeConversationId, session.conversations],
   );
+
+  const canSend = draft.trim().length > 0;
 
   async function onSend() {
     const clean = draft.trim();
@@ -35,8 +43,6 @@ export function VoiceAssistantConversationScreen({
     setDraft('');
   }
 
-  const canSend = draft.trim().length > 0;
-
   return (
     <SafeAreaView edges={['top', 'bottom']} className={voiceAssistantConversationThemeClass.safeArea}>
       <View className={voiceAssistantConversationThemeClass.screen}>
@@ -44,38 +50,28 @@ export function VoiceAssistantConversationScreen({
           <View className={voiceAssistantConversationThemeClass.headerRow}>
             <TouchableOpacity
               className={voiceAssistantConversationThemeClass.headerButton}
-              onPress={onGoHome}
-              testID="conversation-go-home-button"
+              onPress={onOpenDrawer}
+              testID="conversation-open-drawer-button"
             >
-              <VoiceAssistantIcon name="back" size={22} color="#111827" />
+              <VoiceAssistantIcon name="menu" size={22} color="#111827" />
             </TouchableOpacity>
             <View className={voiceAssistantConversationThemeClass.headerCenter}>
               <Text className={voiceAssistantConversationThemeClass.headerTitle}>
                 {activeConversation?.title ?? '默认会话'}
               </Text>
               <Text className={voiceAssistantConversationThemeClass.headerSubtext}>
-                当前为文字对话模式
+                {mode === 'voice' ? '语音对话中会继续沿用当前上下文' : '继续和当前角色对话'}
               </Text>
             </View>
             <TouchableOpacity
               className={voiceAssistantConversationThemeClass.headerButton}
-              onPress={onOpenVoice}
-              testID="conversation-open-voice-button"
+              onPress={() => onChangeMode(mode === 'voice' ? 'text' : 'voice')}
+              testID="conversation-mode-toggle-button"
             >
-              <VoiceAssistantIcon name="phone" size={20} color="#111827" />
+              <VoiceAssistantIcon name={mode === 'voice' ? 'text' : 'phone'} size={20} color="#111827" />
             </TouchableOpacity>
           </View>
 
-          <View className={voiceAssistantConversationThemeClass.modeSwitchRow}>
-            <View className={voiceAssistantConversationThemeClass.modeChipActive}>
-              <VoiceAssistantIcon name="text" size={16} color="#0F172A" />
-              <Text className={voiceAssistantConversationThemeClass.modeChipActiveText}>文字对话</Text>
-            </View>
-            <TouchableOpacity className={voiceAssistantConversationThemeClass.modeChip} onPress={onOpenVoice}>
-              <VoiceAssistantIcon name="phone" size={16} color="#475569" />
-              <Text className={voiceAssistantConversationThemeClass.modeChipText}>语音通话</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         <ScrollView
@@ -95,24 +91,7 @@ export function VoiceAssistantConversationScreen({
           ))}
         </ScrollView>
 
-        <View className={voiceAssistantConversationThemeClass.composerMetaRow}>
-          <Text className={voiceAssistantConversationThemeClass.composerMetaText}>
-            语音模式下会自动听说；文字模式下可直接输入发送。
-          </Text>
-          <TouchableOpacity
-            className={voiceAssistantConversationThemeClass.connectionTextButton}
-            onPress={session.testS2SConnection}
-            testID="conversation-s2s-test-button"
-          >
-            <Text className={voiceAssistantConversationThemeClass.connectionTextButtonText}>连接测试</Text>
-          </TouchableOpacity>
-        </View>
-
         <View className={voiceAssistantConversationThemeClass.composerDock}>
-          <TouchableOpacity className={voiceAssistantConversationThemeClass.iconButton}>
-            <VoiceAssistantIcon name="camera" size={23} color="#111827" />
-          </TouchableOpacity>
-
           <View className={voiceAssistantConversationThemeClass.inputShell}>
             <TextInput
               className={voiceAssistantConversationThemeClass.inputField}
@@ -126,27 +105,34 @@ export function VoiceAssistantConversationScreen({
 
           <TouchableOpacity
             className={voiceAssistantConversationThemeClass.iconButtonSoft}
-            onPress={onOpenVoice}
+            onPress={() => onChangeMode('voice')}
+            testID="conversation-open-voice-button"
           >
             <VoiceAssistantIcon name="mic" size={22} color="#111827" />
           </TouchableOpacity>
 
-          {canSend ? (
-            <TouchableOpacity
-              className={voiceAssistantConversationThemeClass.primaryComposerAction}
-              onPress={onSend}
-              testID="conversation-send-button"
-            >
-              <Text className={voiceAssistantConversationThemeClass.primaryComposerActionText}>发送</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity className={voiceAssistantConversationThemeClass.iconButton}>
-              <View className="h-8 w-8 items-center justify-center rounded-full border border-slate-900">
-                <VoiceAssistantIcon name="plus" size={18} color="#111827" />
-              </View>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            className={`${voiceAssistantConversationThemeClass.primaryComposerAction} ${
+              canSend ? '' : 'opacity-40'
+            }`}
+            disabled={!canSend}
+            onPress={onSend}
+            testID="conversation-send-button"
+          >
+            <Text className={voiceAssistantConversationThemeClass.primaryComposerActionText}>发送</Text>
+          </TouchableOpacity>
         </View>
+
+        {mode === 'voice' ? (
+          <View className="absolute inset-0 z-20">
+            <VoiceAssistantScreen
+              session={session}
+              onExitVoice={() => onChangeMode('text')}
+              onOpenDrawer={onOpenDrawer}
+              autoStartOnMount
+            />
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );

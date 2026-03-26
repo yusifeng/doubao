@@ -22,6 +22,8 @@ export type UseTextChatResult = {
   messages: Message[];
   liveUserTranscript: string;
   pendingAssistantReply: string;
+  createConversation: (title?: string) => Promise<string>;
+  selectConversation: (conversationId: string) => Promise<boolean>;
   sendText: (text: string) => Promise<void>;
   isVoiceActive: boolean;
   toggleVoice: () => Promise<void>;
@@ -207,6 +209,39 @@ export function useTextChat(): UseTextChatResult {
     setMessages(refreshedMessages);
     setConversations(refreshedConversations);
   }, [activeConversationId, repo]);
+
+  const selectConversation = useCallback(
+    async (conversationId: string) => {
+      const refreshedConversations = await repo.listConversations();
+      const nextConversation = refreshedConversations.find((conversation) => conversation.id === conversationId);
+      if (!nextConversation) {
+        return false;
+      }
+      const refreshedMessages = await repo.listMessages(conversationId);
+      setActiveConversationId(conversationId);
+      setMessages(refreshedMessages);
+      setConversations(refreshedConversations);
+      setLiveUserTranscript('');
+      setPendingAssistantReply('');
+      return true;
+    },
+    [repo],
+  );
+
+  const createConversation = useCallback(
+    async (title = '新会话') => {
+      const conversation = await repo.createConversation(title);
+      const refreshedConversations = await repo.listConversations();
+      const refreshedMessages = await repo.listMessages(conversation.id);
+      setActiveConversationId(conversation.id);
+      setMessages(refreshedMessages);
+      setConversations(refreshedConversations);
+      setLiveUserTranscript('');
+      setPendingAssistantReply('');
+      return conversation.id;
+    },
+    [repo],
+  );
 
   const appendAssistantAudioMessage = useCallback(
     async (content: string, options?: { dedupeWindowMs?: number }) => {
@@ -1548,6 +1583,8 @@ export function useTextChat(): UseTextChatResult {
     messages,
     liveUserTranscript,
     pendingAssistantReply,
+    createConversation,
+    selectConversation,
     sendText,
     isVoiceActive,
     toggleVoice,
