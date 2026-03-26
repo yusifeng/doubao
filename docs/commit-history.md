@@ -294,3 +294,38 @@
   - The custom speaker `S_mXRP7Y5M1` still depends on backend resource alignment; `resource id mismatched with speaker related resource` remains a server-side configuration blocker if it reappears.
 - Rollback:
   - Revert the Android Dialog SDK provider/native bridge files and restore Android routing back to `WebSocketS2SProvider + ExpoRealtimeAudioProvider` in `runtime/providers.ts` and `useTextChat.ts`.
+
+## 2026-03-26 19:05 (Asia/Shanghai) - android-voice-manual-interrupt
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/index.md`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+  - `src/core/providers/dialog-engine/android.ts`
+  - `src/core/providers/dialog-engine/mock.ts`
+  - `src/core/providers/dialog-engine/types.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx`
+  - `handoff.md` (new)
+- Summary:
+  - Added Android Dialog Engine `interruptCurrentDialog()` contract and provider implementation to support manual interruption during assistant speaking.
+  - Added runtime `interruptVoiceOutput()` flow for Android Dialog mode: stop current output, preserve already displayed assistant text, clear pending draft, and return call phase to listening.
+  - Prevented interrupted turn from continuing to append assistant partial/final text by guarding `chat_partial` and `chat_final` when interrupted.
+  - Updated voice screen first control behavior: when assistant is speaking, first button now triggers manual interrupt instead of hang-up/mute toggle.
+  - Added Android runtime and UI regression tests covering successful interrupt and interrupt-failure fallback.
+  - Synced active plan/spec docs and handoff notes to reflect V1 scope and the current manual interrupt semantics.
+- Tests:
+  - `pnpm -s jest src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx --runInBand` (pass)
+  - `pnpm -s tsc --noEmit` (pass)
+- Risk:
+  - Interrupt behavior depends on native `interruptCurrentDialog` delivery timing; rare event reordering on some devices may still require field validation.
+  - Current UX still lacks full in-session mute/resume semantics, so first-button behavior only covers speaking-interrupt and call toggle paths.
+- Rollback:
+  - Revert the listed runtime/provider/UI files to restore pre-interrupt behavior and remove the new interrupt API contract from dialog engine types/providers.

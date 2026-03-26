@@ -25,6 +25,10 @@ export class MockDialogEngineProvider implements DialogEngineProvider {
     this.listener?.({ type: 'engine_stop', sessionId: 'mock-session' });
   }
 
+  async interruptCurrentDialog(): Promise<void> {
+    // noop
+  }
+
   async sendTextQuery(_text: string): Promise<void> {
     // noop
   }

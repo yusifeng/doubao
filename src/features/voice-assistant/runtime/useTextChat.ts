@@ -27,6 +27,7 @@ export type UseTextChatResult = {
   sendText: (text: string) => Promise<void>;
   isVoiceActive: boolean;
   toggleVoice: () => Promise<void>;
+  interruptVoiceOutput: () => Promise<void>;
   voiceModeLabel: string;
   voiceToggleLabel: string;
   voiceRuntimeHint: string;
@@ -164,6 +165,7 @@ export function useTextChat(): UseTextChatResult {
   const realtimeListeningStateRef = useRef<RealtimeListeningState>('ready');
   const androidDialogPreparedRef = useRef(false);
   const androidDialogModeRef = useRef<AndroidDialogMode | null>(null);
+  const androidDialogInterruptedRef = useRef(false);
   const androidReplyGenerationRef = useRef(0);
   const androidAssistantDraftRef = useRef('');
   const androidDialogSessionIdRef = useRef<string | null>(null);
@@ -290,6 +292,7 @@ export function useTextChat(): UseTextChatResult {
     lastRealtimeAssistantTextRef.current = '';
     lastAssistantAudioHintRef.current = null;
     androidDialogModeRef.current = null;
+    androidDialogInterruptedRef.current = false;
     androidAssistantDraftRef.current = '';
     androidDialogSessionIdRef.current = null;
     setLiveUserTranscript('');
@@ -621,6 +624,7 @@ export function useTextChat(): UseTextChatResult {
 
       switch (event.type) {
         case 'asr_start':
+          androidDialogInterruptedRef.current = false;
           setLiveUserTranscript('');
           setPendingAssistantReply('');
           androidAssistantDraftRef.current = '';
@@ -669,6 +673,9 @@ export function useTextChat(): UseTextChatResult {
           })();
           break;
         case 'chat_partial':
+          if (androidDialogInterruptedRef.current) {
+            return;
+          }
           setLiveUserTranscript('');
           androidAssistantDraftRef.current = mergeAssistantDraft(
             androidAssistantDraftRef.current,
@@ -681,6 +688,9 @@ export function useTextChat(): UseTextChatResult {
           void updateConversationRuntimeStatus('speaking', { refreshConversations: true });
           break;
         case 'chat_final':
+          if (androidDialogInterruptedRef.current) {
+            return;
+          }
           void (async () => {
             androidReplyGenerationRef.current += 1;
             const draftText = (event.text || androidAssistantDraftRef.current || pendingAssistantReply).trim();
@@ -1176,6 +1186,64 @@ export function useTextChat(): UseTextChatResult {
     voicePipelineMode,
   ]);
 
+  const interruptVoiceOutput = useCallback(async () => {
+    if (!activeConversationId || !isAndroidDialogMode || !isVoiceActive) {
+      return;
+    }
+    if (realtimeCallPhaseRef.current !== 'speaking') {
+      return;
+    }
+
+    const interruptedText = sanitizeAssistantText(
+      (androidAssistantDraftRef.current || pendingAssistantReply).trim(),
+    );
+
+    try {
+      await providers.dialogEngine.interruptCurrentDialog();
+      androidDialogInterruptedRef.current = true;
+      if (interruptedText) {
+        const currentMessages = await repo.listMessages(activeConversationId);
+        const lastMessage = currentMessages[currentMessages.length - 1];
+        if (
+          !(
+            lastMessage?.role === 'assistant' &&
+            isSameAssistantText(lastMessage.content, interruptedText)
+          )
+        ) {
+          await repo.appendMessage(activeConversationId, {
+            conversationId: activeConversationId,
+            role: 'assistant',
+            content: interruptedText,
+            type: 'audio',
+          });
+        }
+      }
+      setLiveUserTranscript('');
+      setPendingAssistantReply('');
+      androidAssistantDraftRef.current = '';
+      updateRealtimeListeningState('ready');
+      updateRealtimeCallPhase('listening');
+      await updateConversationRuntimeStatus('listening', { refreshConversations: true });
+      await syncConversationState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      providers.observability.log('warn', 'failed to interrupt android dialog output', { message });
+      androidDialogInterruptedRef.current = false;
+    }
+  }, [
+    activeConversationId,
+    isAndroidDialogMode,
+    isVoiceActive,
+    pendingAssistantReply,
+    providers.dialogEngine,
+    providers.observability,
+    repo,
+    syncConversationState,
+    updateConversationRuntimeStatus,
+    updateRealtimeCallPhase,
+    updateRealtimeListeningState,
+  ]);
+
   const withCallLifecycleLock = useCallback(async (task: () => Promise<void>) => {
     if (callLifecycleLockRef.current) {
       return;
@@ -1588,6 +1656,7 @@ export function useTextChat(): UseTextChatResult {
     sendText,
     isVoiceActive,
     toggleVoice,
+    interruptVoiceOutput,
     voiceModeLabel,
     voiceToggleLabel,
     voiceRuntimeHint,

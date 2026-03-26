@@ -86,6 +86,10 @@ function VoiceAssistantScreenContent({
   }, [autoStartOnMount, session]);
 
   const handleMicControl = async () => {
+    if (session.status === 'speaking') {
+      await session.interruptVoiceOutput();
+      return;
+    }
     setVoiceInputMuted(isVoiceRunning);
     await session.toggleVoice();
   };

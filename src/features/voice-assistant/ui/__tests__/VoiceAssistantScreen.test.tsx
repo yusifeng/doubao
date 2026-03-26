@@ -24,6 +24,7 @@ function createSession(): UseTextChatResult {
     sendText: jest.fn().mockResolvedValue(undefined),
     isVoiceActive: false,
     toggleVoice: jest.fn().mockResolvedValue(undefined),
+    interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
@@ -71,6 +72,22 @@ describe('VoiceAssistantScreen', () => {
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
 
     expect(session.toggleVoice).toHaveBeenCalledTimes(2);
+  });
+
+  it('interrupts assistant output from the first control while speaking', async () => {
+    const session = createSession();
+    session.status = 'speaking';
+    session.isVoiceActive = true;
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+    await waitFor(() => {
+      expect(screen.getByText('选择情景')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('voice-toggle-button'));
+
+    expect(session.interruptVoiceOutput).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoice).not.toHaveBeenCalled();
   });
 
   it('renders drawer and exit actions when callbacks exist', async () => {

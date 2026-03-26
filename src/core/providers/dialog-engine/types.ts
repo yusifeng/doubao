@@ -42,6 +42,7 @@ export interface DialogEngineProvider {
   prepare(config?: Partial<DialogPrepareConfig>): Promise<void>;
   startConversation(config: DialogStartConversationConfig): Promise<void>;
   stopConversation(): Promise<void>;
+  interruptCurrentDialog(): Promise<void>;
   sendTextQuery(text: string): Promise<void>;
   useClientTriggeredTts(): Promise<void>;
   useServerTriggeredTts(): Promise<void>;

@@ -40,6 +40,7 @@ function createSession(): UseTextChatResult {
     sendText: jest.fn().mockResolvedValue(undefined),
     isVoiceActive: false,
     toggleVoice: jest.fn().mockResolvedValue(undefined),
+    interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',

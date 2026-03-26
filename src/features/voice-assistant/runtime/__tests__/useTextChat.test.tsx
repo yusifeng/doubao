@@ -48,6 +48,7 @@ jest.mock('../providers', () => ({
       prepare: jest.fn(),
       startConversation: jest.fn(),
       stopConversation: jest.fn(),
+      interruptCurrentDialog: jest.fn(),
       sendTextQuery: jest.fn(),
       useClientTriggeredTts: jest.fn(),
       useServerTriggeredTts: jest.fn(),

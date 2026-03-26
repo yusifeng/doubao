@@ -5,6 +5,7 @@ import { useTextChat } from '../useTextChat';
 const mockDialogPrepare = jest.fn<Promise<void>, []>();
 const mockDialogStartConversation = jest.fn<Promise<void>, [unknown]>();
 const mockDialogStopConversation = jest.fn<Promise<void>, []>();
+const mockDialogInterruptCurrentDialog = jest.fn<Promise<void>, []>();
 const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
 const mockDialogDestroy = jest.fn<Promise<void>, []>();
 const mockDialogSetListener = jest.fn<void, [((event: { type: string; text?: string; sessionId?: string }) => void) | null]>();
@@ -49,6 +50,7 @@ jest.mock('../providers', () => ({
       prepare: mockDialogPrepare,
       startConversation: mockDialogStartConversation,
       stopConversation: mockDialogStopConversation,
+      interruptCurrentDialog: mockDialogInterruptCurrentDialog,
       sendTextQuery: mockDialogSendTextQuery,
       useClientTriggeredTts: jest.fn(),
       useServerTriggeredTts: jest.fn(),
@@ -91,6 +93,7 @@ describe('useTextChat android dialog sdk flow', () => {
     mockDialogPrepare.mockResolvedValue();
     mockDialogStartConversation.mockResolvedValue();
     mockDialogStopConversation.mockResolvedValue();
+    mockDialogInterruptCurrentDialog.mockResolvedValue();
     mockDialogSendTextQuery.mockResolvedValue();
     mockDialogDestroy.mockResolvedValue();
   });
@@ -266,6 +269,111 @@ describe('useTextChat android dialog sdk flow', () => {
     });
 
     expect(mockDialogSetListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('interrupts current android assistant output and returns to listening', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-interrupt');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是会被打断的回复', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+      expect(result.current.pendingAssistantReply).toBe('这是会被打断的回复');
+    });
+
+    await act(async () => {
+      await result.current.interruptVoiceOutput();
+    });
+
+    expect(mockDialogInterruptCurrentDialog).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+      expect(result.current.pendingAssistantReply).toBe('');
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '这是会被打断的回复',
+        ),
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这是会被打断的回复后续内容',
+        sessionId: 'voice-session-interrupt',
+      });
+    });
+
+    expect(
+      result.current.messages.some(
+        (message) => message.role === 'assistant' && message.content === '这是会被打断的回复后续内容',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not drop assistant output when android interrupt fails', async () => {
+    mockDialogInterruptCurrentDialog.mockRejectedValueOnce(new Error('native interrupt failed'));
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-interrupt-fail');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是仍应继续的回复', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toBe('这是仍应继续的回复');
+    });
+
+    await act(async () => {
+      await result.current.interruptVoiceOutput();
+    });
+
+    expect(mockDialogInterruptCurrentDialog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这是仍应继续的回复完整版',
+        sessionId: 'voice-session-interrupt-fail',
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '这是仍应继续的回复完整版',
+        ),
+      ).toBe(true);
+      expect(result.current.pendingAssistantReply).toBe('');
+      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
   });
 
   it('handles multiple voice turns with platform auto replies', async () => {

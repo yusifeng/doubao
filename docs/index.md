@@ -4,6 +4,7 @@
 
 ## 核心导航
 
+- [../handoff.md](../handoff.md): 切换到真实目录前的交接文档与关键文件索引。
 - [PLANS.md](./PLANS.md): 执行计划总索引（进行中/已完成）。
 - [FRONTEND.md](./FRONTEND.md): RN/Expo 前端规范与实践边界。
 - [QUALITY_SCORE.md](./QUALITY_SCORE.md): 质量分层评分与改进点。
