@@ -376,6 +376,103 @@ describe('useTextChat android dialog sdk flow', () => {
     });
   });
 
+  it('auto interrupts assistant output when user barges in while speaking', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-barge-in');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是一段正在播报的回复', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+      expect(result.current.pendingAssistantReply).toBe('这是一段正在播报的回复');
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-barge-in' });
+      mockDialogListener?.({ type: 'asr_partial', text: '用户插话内容', sessionId: 'voice-session-barge-in' });
+    });
+
+    await waitFor(() => {
+      expect(mockDialogInterruptCurrentDialog).toHaveBeenCalledTimes(1);
+      expect(result.current.pendingAssistantReply).toBe('');
+      expect(result.current.liveUserTranscript).toBe('用户插话内容');
+      expect(result.current.voiceRuntimeHint).toBe('已听到你在说话');
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '这是一段正在播报的回复',
+        ),
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这是一段正在播报的回复后续内容',
+        sessionId: 'voice-session-barge-in',
+      });
+    });
+
+    expect(
+      result.current.messages.some(
+        (message) => message.role === 'assistant' && message.content === '这是一段正在播报的回复后续内容',
+      ),
+    ).toBe(false);
+  });
+
+  it('continues with the next assistant reply after auto barge-in interrupt', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-barge-in-follow-up');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是会被插话打断的播报', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toBe('这是会被插话打断的播报');
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-barge-in-follow-up' });
+      mockDialogListener?.({ type: 'asr_partial', text: '第二句继续提问', sessionId: 'voice-session-barge-in-follow-up' });
+      mockDialogListener?.({ type: 'asr_final', text: '第二句继续提问', sessionId: 'voice-session-barge-in-follow-up' });
+      mockDialogListener?.({ type: 'chat_partial', text: '第二轮回复', sessionId: 'voice-session-barge-in-follow-up' });
+      mockDialogListener?.({ type: 'chat_final', text: '第二轮回复完成', sessionId: 'voice-session-barge-in-follow-up' });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '第二轮回复完成',
+        ),
+      ).toBe(true);
+      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
   it('handles multiple voice turns with platform auto replies', async () => {
     const { result } = renderHook(() => useTextChat());
 

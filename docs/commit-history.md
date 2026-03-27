@@ -26,6 +26,33 @@
 
 ## Entries
 
+## 2026-03-27 23:19 (Asia/Shanghai) - android-barge-in-auto-interrupt-runtime
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+- Summary:
+  - Implemented Android Dialog SDK barge-in auto interrupt: while assistant is speaking, incoming `asr_start/asr_partial` now triggers automatic `interruptCurrentDialog()` with in-flight dedupe protection.
+  - Unified manual/auto interrupt through shared runtime handling so interrupted assistant draft text is preserved and conversation remains in the same session context.
+  - Fixed interrupt-latch continuity risk by resetting `androidDialogInterruptedRef` on the next valid `asr_final` turn, preventing follow-up `chat_partial/chat_final` from being incorrectly dropped.
+  - Added Android runtime regression tests for both auto-interrupt behavior and post-interrupt follow-up assistant reply continuity.
+  - Synced product spec, active plan, and technical design docs to reflect Android P1 barge-in support.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass, 1 suite / 21 tests)
+  - `pnpm run test --runInBand src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass, 2 suites / 23 tests)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable defects)
+- Risk:
+  - Auto interrupt timing still depends on SDK event ordering (`asr_start/asr_partial` vs trailing `chat_*`), so edge-device latency may surface minor race behavior that needs device-level tuning.
+  - Current implementation keeps barge-in logic in runtime layer only; if future native event semantics change, this path needs synchronized contract updates.
+- Rollback:
+  - Revert the five scoped files above to remove Android auto barge-in behavior and restore previous manual-interrupt-only runtime flow.
+
 ## 2026-03-27 22:51 (Asia/Shanghai) - refine-voice-mode-ui-parity-and-control-semantics
 
 - Commit: pending

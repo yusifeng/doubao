@@ -176,6 +176,7 @@ Android 平台新增 `DialogEngineProvider`，封装火山 Dialog SDK：
   - `chat_final`
 
 Android 运行时不再依赖手写 PCM 上下行与本地音频能量推测来完成主要语音闭环。
+在 Android Dialog SDK 模式下，运行时增加插话打断策略：当 `chat_partial` 播报阶段收到新的 `asr_start/asr_partial`，会自动触发 `interruptCurrentDialog()`，保留已展示 assistant 文本，并将状态切回 listening。
 
 Android SDK 运行前置环境：
 

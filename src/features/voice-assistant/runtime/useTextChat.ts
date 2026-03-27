@@ -166,6 +166,7 @@ export function useTextChat(): UseTextChatResult {
   const androidDialogPreparedRef = useRef(false);
   const androidDialogModeRef = useRef<AndroidDialogMode | null>(null);
   const androidDialogInterruptedRef = useRef(false);
+  const androidDialogInterruptInFlightRef = useRef(false);
   const androidReplyGenerationRef = useRef(0);
   const androidAssistantDraftRef = useRef('');
   const androidDialogSessionIdRef = useRef<string | null>(null);
@@ -293,6 +294,7 @@ export function useTextChat(): UseTextChatResult {
     lastAssistantAudioHintRef.current = null;
     androidDialogModeRef.current = null;
     androidDialogInterruptedRef.current = false;
+    androidDialogInterruptInFlightRef.current = false;
     androidAssistantDraftRef.current = '';
     androidDialogSessionIdRef.current = null;
     setLiveUserTranscript('');
@@ -541,6 +543,103 @@ export function useTextChat(): UseTextChatResult {
     ],
   );
 
+  const performAndroidDialogInterrupt = useCallback(
+    async (source: 'manual' | 'barge_in') => {
+      if (!activeConversationId || !isAndroidDialogMode || !isVoiceActive) {
+        return;
+      }
+      if (realtimeCallPhaseRef.current !== 'speaking') {
+        return;
+      }
+      if (androidDialogInterruptInFlightRef.current) {
+        return;
+      }
+
+      androidDialogInterruptInFlightRef.current = true;
+      const interruptedText = sanitizeAssistantText(
+        (androidAssistantDraftRef.current || pendingAssistantReply).trim(),
+      );
+
+      try {
+        await providers.dialogEngine.interruptCurrentDialog();
+        androidDialogInterruptedRef.current = true;
+        if (interruptedText) {
+          const currentMessages = await repo.listMessages(activeConversationId);
+          const lastMessage = currentMessages[currentMessages.length - 1];
+          if (
+            !(
+              lastMessage?.role === 'assistant' &&
+              isSameAssistantText(lastMessage.content, interruptedText)
+            )
+          ) {
+            await repo.appendMessage(activeConversationId, {
+              conversationId: activeConversationId,
+              role: 'assistant',
+              content: interruptedText,
+              type: 'audio',
+            });
+          }
+        }
+        if (source === 'manual') {
+          setLiveUserTranscript('');
+        }
+        setPendingAssistantReply('');
+        androidAssistantDraftRef.current = '';
+        if (source === 'manual') {
+          updateRealtimeListeningState('ready');
+        }
+        updateRealtimeCallPhase('listening');
+        await updateConversationRuntimeStatus('listening', { refreshConversations: true });
+        await syncConversationState();
+        providers.observability.log('info', 'android dialog interrupted', {
+          source,
+          interruptedTextLength: interruptedText.length,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        providers.observability.log('warn', 'failed to interrupt android dialog output', {
+          message,
+          source,
+        });
+        androidDialogInterruptedRef.current = false;
+      } finally {
+        androidDialogInterruptInFlightRef.current = false;
+      }
+    },
+    [
+      activeConversationId,
+      isAndroidDialogMode,
+      isVoiceActive,
+      pendingAssistantReply,
+      providers.dialogEngine,
+      providers.observability,
+      repo,
+      syncConversationState,
+      updateConversationRuntimeStatus,
+      updateRealtimeCallPhase,
+      updateRealtimeListeningState,
+    ],
+  );
+
+  const maybeInterruptOnBargeIn = useCallback(
+    (eventType: 'asr_start' | 'asr_partial') => {
+      if (!isAndroidDialogMode || !isVoiceActive || !voiceLoopActiveRef.current) {
+        return;
+      }
+      if (realtimeCallPhaseRef.current !== 'speaking') {
+        return;
+      }
+      if (androidDialogInterruptedRef.current || androidDialogInterruptInFlightRef.current) {
+        return;
+      }
+      providers.observability.log('info', 'android barge-in detected while speaking', {
+        eventType,
+      });
+      void performAndroidDialogInterrupt('barge_in');
+    },
+    [isAndroidDialogMode, isVoiceActive, performAndroidDialogInterrupt, providers.observability],
+  );
+
   const handleAndroidDialogEvent = useCallback(
     (event: DialogEngineEvent) => {
       const logIgnoredAndroidDialogEvent = (reason: string) => {
@@ -624,7 +723,10 @@ export function useTextChat(): UseTextChatResult {
 
       switch (event.type) {
         case 'asr_start':
-          androidDialogInterruptedRef.current = false;
+          maybeInterruptOnBargeIn('asr_start');
+          if (realtimeCallPhaseRef.current !== 'speaking') {
+            androidDialogInterruptedRef.current = false;
+          }
           setLiveUserTranscript('');
           setPendingAssistantReply('');
           androidAssistantDraftRef.current = '';
@@ -635,6 +737,7 @@ export function useTextChat(): UseTextChatResult {
           }
           break;
         case 'asr_partial':
+          maybeInterruptOnBargeIn('asr_partial');
           if (!voiceLoopActiveRef.current) {
             return;
           }
@@ -654,6 +757,9 @@ export function useTextChat(): UseTextChatResult {
             void updateConversationRuntimeStatus('listening', { refreshConversations: true });
             return;
           }
+          // A completed user utterance starts a new turn; clear the interrupt latch
+          // so the next assistant reply can flow through.
+          androidDialogInterruptedRef.current = false;
           setLiveUserTranscript(finalUserText);
           updateRealtimeListeningState('awaiting_reply');
           const replyGeneration = androidReplyGenerationRef.current + 1;
@@ -733,6 +839,7 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      maybeInterruptOnBargeIn,
       pendingAssistantReply,
       providers.observability,
       repo,
@@ -1187,61 +1294,9 @@ export function useTextChat(): UseTextChatResult {
   ]);
 
   const interruptVoiceOutput = useCallback(async () => {
-    if (!activeConversationId || !isAndroidDialogMode || !isVoiceActive) {
-      return;
-    }
-    if (realtimeCallPhaseRef.current !== 'speaking') {
-      return;
-    }
-
-    const interruptedText = sanitizeAssistantText(
-      (androidAssistantDraftRef.current || pendingAssistantReply).trim(),
-    );
-
-    try {
-      await providers.dialogEngine.interruptCurrentDialog();
-      androidDialogInterruptedRef.current = true;
-      if (interruptedText) {
-        const currentMessages = await repo.listMessages(activeConversationId);
-        const lastMessage = currentMessages[currentMessages.length - 1];
-        if (
-          !(
-            lastMessage?.role === 'assistant' &&
-            isSameAssistantText(lastMessage.content, interruptedText)
-          )
-        ) {
-          await repo.appendMessage(activeConversationId, {
-            conversationId: activeConversationId,
-            role: 'assistant',
-            content: interruptedText,
-            type: 'audio',
-          });
-        }
-      }
-      setLiveUserTranscript('');
-      setPendingAssistantReply('');
-      androidAssistantDraftRef.current = '';
-      updateRealtimeListeningState('ready');
-      updateRealtimeCallPhase('listening');
-      await updateConversationRuntimeStatus('listening', { refreshConversations: true });
-      await syncConversationState();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      providers.observability.log('warn', 'failed to interrupt android dialog output', { message });
-      androidDialogInterruptedRef.current = false;
-    }
+    await performAndroidDialogInterrupt('manual');
   }, [
-    activeConversationId,
-    isAndroidDialogMode,
-    isVoiceActive,
-    pendingAssistantReply,
-    providers.dialogEngine,
-    providers.observability,
-    repo,
-    syncConversationState,
-    updateConversationRuntimeStatus,
-    updateRealtimeCallPhase,
-    updateRealtimeListeningState,
+    performAndroidDialogInterrupt,
   ]);
 
   const withCallLifecycleLock = useCallback(async (task: () => Promise<void>) => {
