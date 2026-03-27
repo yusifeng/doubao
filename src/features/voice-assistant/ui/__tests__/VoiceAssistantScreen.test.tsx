@@ -152,6 +152,6 @@ describe('VoiceAssistantScreen', () => {
     expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
     expect(await screen.findByText('豆包你好。')).toBeTruthy();
     expect(screen.getByText('你好呀，今天有什么想聊的吗？')).toBeTruthy();
-    expect(screen.queryByText('实时通话未开启')).toBeTruthy();
+    expect(screen.queryByText('正在听...')).toBeTruthy();
   });
 });

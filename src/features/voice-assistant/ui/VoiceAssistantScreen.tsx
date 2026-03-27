@@ -6,7 +6,6 @@ import {
   voiceAssistantThemeStyle,
   voiceAssistantVoiceThemeClass,
 } from '../../../core/theme/mappers';
-import { VOICE_ASSISTANT_STATUS_LABEL } from '../config/constants';
 import { useTextChat, type UseTextChatResult } from '../runtime/useTextChat';
 import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 
@@ -18,6 +17,12 @@ type VoiceAssistantScreenContentProps = {
   embedded?: boolean;
   displayMode?: 'avatar' | 'dialogue';
   onToggleDisplayMode?: () => void;
+};
+
+type DialogueLine = {
+  id: string;
+  text: string;
+  role: 'assistant' | 'user';
 };
 
 function VoiceAssistantScreenContent({
@@ -33,38 +38,43 @@ function VoiceAssistantScreenContent({
   const autoStartedRef = useRef(false);
   const [voiceInputMuted, setVoiceInputMuted] = useState(false);
   const isVoiceRunning = session.isVoiceActive;
+  const isAssistantSpeaking = session.status === 'speaking';
   const statusText = useMemo(() => {
-    if (displayMode === 'avatar') {
-      if (voiceInputMuted) {
-        return '你已静音';
-      }
-      if (session.status === 'speaking' || session.voiceRuntimeHint.includes('播报')) {
-        return '说话或者点击打断';
-      }
-      return '正在听...';
-    }
-
     if (voiceInputMuted) {
       return '你已静音';
     }
-    if (session.status === 'speaking' || session.voiceRuntimeHint.includes('播报')) {
+    if (isAssistantSpeaking) {
       return '说话或者点击打断';
     }
-    return session.voiceRuntimeHint || VOICE_ASSISTANT_STATUS_LABEL[session.status];
-  }, [displayMode, session.status, session.voiceRuntimeHint, voiceInputMuted]);
-  const transcriptText = session.pendingAssistantReply || session.liveUserTranscript || '';
-  const dialogueLines = useMemo(() => {
-    const baseLines = session.messages
+    return '正在听...';
+  }, [isAssistantSpeaking, voiceInputMuted]);
+  const dialogueLines = useMemo<DialogueLine[]>(() => {
+    const baseLines: DialogueLine[] = session.messages
       .slice(-4)
-      .map((message) => message.content.trim())
-      .filter(Boolean);
+      .map<DialogueLine>((message) => ({
+        id: message.id,
+        text: message.content.trim(),
+        role: message.role === 'user' ? 'user' : 'assistant',
+      }))
+      .filter((message) => message.text.length > 0);
+    const lines: DialogueLine[] = [...baseLines];
 
     if (session.pendingAssistantReply.trim()) {
-      return [...baseLines, session.pendingAssistantReply.trim()].slice(-4);
+      lines.push({
+        id: 'pending-assistant-reply',
+        text: session.pendingAssistantReply.trim(),
+        role: 'assistant',
+      });
+      return lines.slice(-4);
     }
 
     if (session.liveUserTranscript.trim()) {
-      return [...baseLines, session.liveUserTranscript.trim()].slice(-4);
+      lines.push({
+        id: 'live-user-transcript',
+        text: session.liveUserTranscript.trim(),
+        role: 'user',
+      });
+      return lines.slice(-4);
     }
 
     return baseLines;
@@ -86,7 +96,7 @@ function VoiceAssistantScreenContent({
   }, [autoStartOnMount, session]);
 
   const handleMicControl = async () => {
-    if (session.status === 'speaking') {
+    if (isAssistantSpeaking) {
       await session.interruptVoiceOutput();
       return;
     }
@@ -180,16 +190,16 @@ function VoiceAssistantScreenContent({
         ) : (
           <View className={voiceAssistantVoiceThemeClass.dialogueBody} testID="voice-dialogue-scene">
             <View className={voiceAssistantVoiceThemeClass.dialogueList}>
-              {dialogueLines.map((line, index) => (
+              {dialogueLines.map((line) => (
                 <Text
-                  key={`${line}-${index}`}
+                  key={line.id}
                   className={
-                    index % 2 === 0
+                    line.role === 'assistant'
                       ? voiceAssistantVoiceThemeClass.dialogueLinePrimary
                       : voiceAssistantVoiceThemeClass.dialogueLineSecondary
                   }
                 >
-                  {line}
+                  {line.text}
                 </Text>
               ))}
             </View>
@@ -208,7 +218,9 @@ function VoiceAssistantScreenContent({
           <View className={voiceAssistantVoiceThemeClass.controlsRow}>
             <TouchableOpacity
               className={
-                isVoiceRunning
+                isAssistantSpeaking
+                  ? voiceAssistantVoiceThemeClass.controlShellSpeaking
+                  : isVoiceRunning
                   ? voiceAssistantVoiceThemeClass.controlShell
                   : voiceAssistantVoiceThemeClass.controlShellMuted
               }
@@ -218,9 +230,11 @@ function VoiceAssistantScreenContent({
               testID="voice-toggle-button"
             >
               <VoiceAssistantIcon
-                name="mic"
+                name={isAssistantSpeaking ? 'close' : 'mic'}
                 size={26}
-                color={isVoiceRunning ? '#111827' : '#FFFFFF'}
+                color={
+                  isAssistantSpeaking ? '#FFFFFF' : isVoiceRunning ? '#111827' : '#FFFFFF'
+                }
               />
             </TouchableOpacity>
             <TouchableOpacity

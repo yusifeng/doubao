@@ -26,6 +26,31 @@
 
 ## Entries
 
+## 2026-03-27 22:51 (Asia/Shanghai) - refine-voice-mode-ui-parity-and-control-semantics
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/core/theme/mappers.ts`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+- Summary:
+  - Unified the voice-page status copy to product-level semantics (`正在听...` / `你已静音` / `说话或者点击打断`) instead of rendering runtime hint strings directly.
+  - Tightened voice-mode visual hierarchy (lighter header, denser control row, adjusted button shells) and improved dialogue-mode bubbles to better distinguish assistant vs user lines.
+  - Updated first control behavior and visual affordance so the button clearly switches to manual interrupt intent while assistant is in `speaking`.
+  - Removed behavior coupling to `voiceRuntimeHint` string matching and now uses session status only for interrupt branching, reducing i18n/copy-change regression risk.
+  - Synced UI parity design notes and test assertions with the new voice-mode semantics.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx` (pass, 2 suites / 11 tests)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable defects)
+- Risk:
+  - The first control now keys off `status === 'speaking'`; if runtime status propagation lags on specific devices, interrupt affordance timing may still require follow-up tuning in `useTextChat`.
+  - Visual parity is improved but still based on inferred spacing from current references; a final on-device pixel pass may still surface minor offsets.
+- Rollback:
+  - Revert the four scoped files above to restore previous voice-mode hint rendering, previous control styling, and pre-change tests/docs.
+
 ## 2026-03-25 03:22 (Asia/Shanghai) - migrate-native-pcm-player-into-mydoubao2
 
 - Commit: pending
