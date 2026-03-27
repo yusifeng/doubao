@@ -26,6 +26,42 @@
 
 ## Entries
 
+## 2026-03-28 00:08 (Asia/Shanghai) - implement-session-level-mute-for-android-dialog
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/core/providers/dialog-engine/types.ts`
+  - `src/core/providers/dialog-engine/android.ts`
+  - `src/core/providers/dialog-engine/mock.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/providers.test.ts`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+- Summary:
+  - Implemented Android session-level mute/unmute by extending `DialogEngineProvider` with `pauseTalking/resumeTalking` and wiring those methods through the Android provider.
+  - Updated runtime contract (`UseTextChatResult`) with `supportsVoiceInputMute`, `isVoiceInputMuted`, and `toggleVoiceInputMuted`, then switched voice screen first-button behavior to: speaking => interrupt, active+supported => mute toggle, otherwise fallback to legacy voice toggle.
+  - Added event-level mute gating for Android `asr_start/asr_partial/asr_final` so muted calls do not accept external audio input into transcript/message flow.
+  - Hardened mute path against async races (late pause/resume completion after hangup) and startup failure rollback by using optimistic state + guarded post-await updates + rollback rules tied to call phase.
+  - Synced product spec, active plan, and design docs to record that Android now supports true in-session mute while preserving call context and ongoing assistant playback.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test --runInBand src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/providers.test.ts src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx` (pass, 6 suites / 43 tests)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable defects)
+- Risk:
+  - Mute semantics currently ship as Android Dialog-specific capability; non-Dialog pipelines intentionally keep legacy first-button toggle behavior and may need separate parity work later.
+  - Runtime guards rely on current dialog phase transitions; if SDK callback ordering changes in future SDK versions, mute-race protection should be re-verified on device.
+- Rollback:
+  - Revert all scoped runtime/provider/UI/test/doc files above to restore pre-P2 behavior (no dedicated in-session mute capability).
+
 ## 2026-03-27 23:19 (Asia/Shanghai) - android-barge-in-auto-interrupt-runtime
 
 - Commit: pending

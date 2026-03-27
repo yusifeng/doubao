@@ -23,7 +23,10 @@ function createSession(): UseTextChatResult {
     selectConversation: jest.fn().mockResolvedValue(true),
     sendText: jest.fn().mockResolvedValue(undefined),
     isVoiceActive: false,
+    supportsVoiceInputMute: true,
+    isVoiceInputMuted: false,
     toggleVoice: jest.fn().mockResolvedValue(undefined),
+    toggleVoiceInputMuted: jest.fn().mockResolvedValue(undefined),
     interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
     voiceToggleLabel: '开始通话',
@@ -60,8 +63,9 @@ describe('VoiceAssistantScreen', () => {
     expect(screen.getByText('正在听...')).toBeTruthy();
   });
 
-  it('supports pausing and resuming voice capture from the first control', async () => {
+  it('supports muting and unmuting voice input from the first control', async () => {
     const session = createSession();
+    session.isVoiceActive = true;
 
     renderScreen(<VoiceAssistantScreen session={session} />);
     await waitFor(() => {
@@ -71,7 +75,23 @@ describe('VoiceAssistantScreen', () => {
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
 
-    expect(session.toggleVoice).toHaveBeenCalledTimes(2);
+    expect(session.toggleVoiceInputMuted).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to legacy voice toggle when input mute is unsupported', async () => {
+    const session = createSession();
+    session.isVoiceActive = true;
+    session.supportsVoiceInputMute = false;
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+    await waitFor(() => {
+      expect(screen.getByText('选择情景')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('voice-toggle-button'));
+
+    expect(session.toggleVoice).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoiceInputMuted).not.toHaveBeenCalled();
   });
 
   it('interrupts assistant output from the first control while speaking', async () => {

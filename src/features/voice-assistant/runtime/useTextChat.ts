@@ -26,7 +26,10 @@ export type UseTextChatResult = {
   selectConversation: (conversationId: string) => Promise<boolean>;
   sendText: (text: string) => Promise<void>;
   isVoiceActive: boolean;
+  supportsVoiceInputMute: boolean;
+  isVoiceInputMuted: boolean;
   toggleVoice: () => Promise<void>;
+  toggleVoiceInputMuted: () => Promise<void>;
   interruptVoiceOutput: () => Promise<void>;
   voiceModeLabel: string;
   voiceToggleLabel: string;
@@ -176,6 +179,8 @@ export function useTextChat(): UseTextChatResult {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isVoiceInputMuted, setIsVoiceInputMuted] = useState(false);
+  const isVoiceInputMutedRef = useRef(false);
   const [realtimeCallPhase, setRealtimeCallPhase] = useState<RealtimeCallPhase>('idle');
   const [realtimeListeningState, setRealtimeListeningState] = useState<RealtimeListeningState>('ready');
   const [liveUserTranscript, setLiveUserTranscript] = useState('');
@@ -300,6 +305,13 @@ export function useTextChat(): UseTextChatResult {
     setLiveUserTranscript('');
     setPendingAssistantReply('');
     setIsVoiceActive(false);
+    isVoiceInputMutedRef.current = false;
+    setIsVoiceInputMuted(false);
+  }, []);
+
+  const setVoiceInputMutedRuntime = useCallback((muted: boolean) => {
+    isVoiceInputMutedRef.current = muted;
+    setIsVoiceInputMuted(muted);
   }, []);
 
   const rememberRetiredAndroidDialogSession = useCallback((sessionId?: string | null) => {
@@ -723,6 +735,9 @@ export function useTextChat(): UseTextChatResult {
 
       switch (event.type) {
         case 'asr_start':
+          if (isVoiceInputMutedRef.current) {
+            return;
+          }
           maybeInterruptOnBargeIn('asr_start');
           if (realtimeCallPhaseRef.current !== 'speaking') {
             androidDialogInterruptedRef.current = false;
@@ -737,6 +752,9 @@ export function useTextChat(): UseTextChatResult {
           }
           break;
         case 'asr_partial':
+          if (isVoiceInputMutedRef.current) {
+            return;
+          }
           maybeInterruptOnBargeIn('asr_partial');
           if (!voiceLoopActiveRef.current) {
             return;
@@ -746,6 +764,9 @@ export function useTextChat(): UseTextChatResult {
           void updateConversationRuntimeStatus('listening', { refreshConversations: true });
           break;
         case 'asr_final':
+          if (isVoiceInputMutedRef.current) {
+            return;
+          }
           if (!voiceLoopActiveRef.current || !activeConversationId) {
             return;
           }
@@ -1299,6 +1320,60 @@ export function useTextChat(): UseTextChatResult {
     performAndroidDialogInterrupt,
   ]);
 
+  const toggleVoiceInputMuted = useCallback(async () => {
+    if (!isAndroidDialogMode || !isVoiceActive) {
+      return;
+    }
+
+    const previousMuted = isVoiceInputMutedRef.current;
+    const nextMuted = !previousMuted;
+    setVoiceInputMutedRuntime(nextMuted);
+
+    const isStillInActiveVoiceCall = () =>
+      voiceLoopActiveRef.current &&
+      androidDialogModeRef.current === 'voice' &&
+      realtimeCallPhaseRef.current !== 'stopping' &&
+      realtimeCallPhaseRef.current !== 'idle';
+    const shouldRollbackMuteState = () =>
+      realtimeCallPhaseRef.current !== 'stopping' && realtimeCallPhaseRef.current !== 'idle';
+
+    try {
+      if (nextMuted) {
+        await providers.dialogEngine.pauseTalking();
+        if (!isStillInActiveVoiceCall()) {
+          return;
+        }
+        setLiveUserTranscript('');
+        setPendingAssistantReply('');
+        updateRealtimeListeningState('ready');
+      } else {
+        await providers.dialogEngine.resumeTalking();
+        if (!isStillInActiveVoiceCall()) {
+          return;
+        }
+        updateRealtimeListeningState('ready');
+        updateRealtimeCallPhase('listening');
+        await updateConversationRuntimeStatus('listening', { refreshConversations: true });
+      }
+      providers.observability.log('info', 'android voice input mute toggled', { muted: nextMuted });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      providers.observability.log('warn', 'failed to toggle android voice input mute', { message, nextMuted });
+      if (shouldRollbackMuteState()) {
+        setVoiceInputMutedRuntime(previousMuted);
+      }
+    }
+  }, [
+    isAndroidDialogMode,
+    isVoiceActive,
+    providers.dialogEngine,
+    providers.observability,
+    setVoiceInputMutedRuntime,
+    updateConversationRuntimeStatus,
+    updateRealtimeCallPhase,
+    updateRealtimeListeningState,
+  ]);
+
   const withCallLifecycleLock = useCallback(async (task: () => Promise<void>) => {
     if (callLifecycleLockRef.current) {
       return;
@@ -1455,6 +1530,7 @@ export function useTextChat(): UseTextChatResult {
           try {
             updateRealtimeCallPhase('starting');
             setIsVoiceActive(true);
+            setVoiceInputMutedRuntime(false);
             voiceLoopActiveRef.current = true;
             setLiveUserTranscript('');
             setPendingAssistantReply('');
@@ -1573,6 +1649,7 @@ export function useTextChat(): UseTextChatResult {
     resetRealtimeCallState,
     runHandsFreeVoiceLoop,
     runTextRound,
+    setVoiceInputMutedRuntime,
     stopAndroidDialogConversation,
     stopRealtimeDemoCall,
     stopHandsFreeVoiceLoop,
@@ -1651,6 +1728,9 @@ export function useTextChat(): UseTextChatResult {
 
   const voiceRuntimeHint = useMemo(() => {
     if (isAndroidDialogMode) {
+      if (isVoiceActive && isVoiceInputMuted && realtimeCallPhase !== 'speaking') {
+        return '你已静音';
+      }
       switch (realtimeCallPhase) {
         case 'starting':
           return '正在接通';
@@ -1697,7 +1777,7 @@ export function useTextChat(): UseTextChatResult {
       default:
         return '实时通话未开启';
     }
-  }, [isAndroidDialogMode, isVoiceActive, realtimeCallPhase, realtimeListeningState, voicePipelineMode]);
+  }, [isAndroidDialogMode, isVoiceActive, isVoiceInputMuted, realtimeCallPhase, realtimeListeningState, voicePipelineMode]);
 
   return {
     status: machine.status,
@@ -1710,7 +1790,10 @@ export function useTextChat(): UseTextChatResult {
     selectConversation,
     sendText,
     isVoiceActive,
+    supportsVoiceInputMute: isAndroidDialogMode,
+    isVoiceInputMuted,
     toggleVoice,
+    toggleVoiceInputMuted,
     interruptVoiceOutput,
     voiceModeLabel,
     voiceToggleLabel,

@@ -5,6 +5,8 @@ import { useTextChat } from '../useTextChat';
 const mockDialogPrepare = jest.fn<Promise<void>, []>();
 const mockDialogStartConversation = jest.fn<Promise<void>, [unknown]>();
 const mockDialogStopConversation = jest.fn<Promise<void>, []>();
+const mockDialogPauseTalking = jest.fn<Promise<void>, []>();
+const mockDialogResumeTalking = jest.fn<Promise<void>, []>();
 const mockDialogInterruptCurrentDialog = jest.fn<Promise<void>, []>();
 const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
 const mockDialogDestroy = jest.fn<Promise<void>, []>();
@@ -50,6 +52,8 @@ jest.mock('../providers', () => ({
       prepare: mockDialogPrepare,
       startConversation: mockDialogStartConversation,
       stopConversation: mockDialogStopConversation,
+      pauseTalking: mockDialogPauseTalking,
+      resumeTalking: mockDialogResumeTalking,
       interruptCurrentDialog: mockDialogInterruptCurrentDialog,
       sendTextQuery: mockDialogSendTextQuery,
       useClientTriggeredTts: jest.fn(),
@@ -93,6 +97,8 @@ describe('useTextChat android dialog sdk flow', () => {
     mockDialogPrepare.mockResolvedValue();
     mockDialogStartConversation.mockResolvedValue();
     mockDialogStopConversation.mockResolvedValue();
+    mockDialogPauseTalking.mockResolvedValue();
+    mockDialogResumeTalking.mockResolvedValue();
     mockDialogInterruptCurrentDialog.mockResolvedValue();
     mockDialogSendTextQuery.mockResolvedValue();
     mockDialogDestroy.mockResolvedValue();
@@ -578,6 +584,136 @@ describe('useTextChat android dialog sdk flow', () => {
     await waitFor(() => {
       expect(result.current.voiceToggleLabel).toBe('挂断通话');
       expect(result.current.voiceRuntimeHint).toBe('已发送，等待回复');
+    });
+  });
+
+  it('mutes and unmutes voice input inside the same android dialog session', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-mute');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '静音前识别', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.liveUserTranscript).toBe('静音前识别');
+    });
+
+    await act(async () => {
+      await result.current.toggleVoiceInputMuted();
+    });
+
+    expect(mockDialogPauseTalking).toHaveBeenCalledTimes(1);
+    expect(result.current.isVoiceInputMuted).toBe(true);
+    expect(result.current.voiceRuntimeHint).toBe('你已静音');
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-mute' });
+      mockDialogListener?.({ type: 'asr_partial', text: '静音中应忽略', sessionId: 'voice-session-mute' });
+      mockDialogListener?.({ type: 'asr_final', text: '静音中应忽略', sessionId: 'voice-session-mute' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.liveUserTranscript).toBe('');
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'user' && message.content === '静音中应忽略',
+        ),
+      ).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.toggleVoiceInputMuted();
+    });
+
+    expect(mockDialogResumeTalking).toHaveBeenCalledTimes(1);
+    expect(result.current.isVoiceInputMuted).toBe(false);
+    expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+  });
+
+  it('does not restore listening state when mute call resolves after hangup', async () => {
+    let resolvePauseTalking: (() => void) | null = null;
+    mockDialogPauseTalking.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePauseTalking = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      emitEngineStart('voice-session-mute-race');
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-mute-race' });
+    });
+
+    let mutePromise: Promise<void> | null = null;
+    await act(async () => {
+      mutePromise = result.current.toggleVoiceInputMuted();
+      await result.current.toggleVoice();
+      resolvePauseTalking?.();
+      if (mutePromise) {
+        await mutePromise;
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current.isVoiceActive).toBe(false);
+      expect(result.current.status).toBe('idle');
+      expect(result.current.voiceRuntimeHint).toBe('实时通话未开启');
+    });
+  });
+
+  it('rolls back optimistic mute flag when pauseTalking fails during call startup', async () => {
+    let resolveStartConversation: (() => void) | null = null;
+    mockDialogStartConversation.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStartConversation = resolve;
+        }),
+    );
+    mockDialogPauseTalking.mockRejectedValueOnce(new Error('pause failed'));
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    let startPromise: Promise<void> | null = null;
+    await act(async () => {
+      startPromise = result.current.toggleVoice();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoiceInputMuted();
+    });
+
+    expect(result.current.isVoiceInputMuted).toBe(false);
+
+    await act(async () => {
+      resolveStartConversation?.();
+      if (startPromise) {
+        await startPromise;
+      }
     });
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
@@ -36,18 +36,18 @@ function VoiceAssistantScreenContent({
 }: VoiceAssistantScreenContentProps) {
   const insets = useSafeAreaInsets();
   const autoStartedRef = useRef(false);
-  const [voiceInputMuted, setVoiceInputMuted] = useState(false);
   const isVoiceRunning = session.isVoiceActive;
   const isAssistantSpeaking = session.status === 'speaking';
+  const isVoiceInputMuted = session.isVoiceInputMuted;
   const statusText = useMemo(() => {
-    if (voiceInputMuted) {
+    if (isVoiceInputMuted) {
       return '你已静音';
     }
     if (isAssistantSpeaking) {
       return '说话或者点击打断';
     }
     return '正在听...';
-  }, [isAssistantSpeaking, voiceInputMuted]);
+  }, [isAssistantSpeaking, isVoiceInputMuted]);
   const dialogueLines = useMemo<DialogueLine[]>(() => {
     const baseLines: DialogueLine[] = session.messages
       .slice(-4)
@@ -81,13 +81,6 @@ function VoiceAssistantScreenContent({
   }, [session.liveUserTranscript, session.messages, session.pendingAssistantReply]);
 
   useEffect(() => {
-    if (!isVoiceRunning) {
-      return;
-    }
-    setVoiceInputMuted(false);
-  }, [isVoiceRunning]);
-
-  useEffect(() => {
     if (!autoStartOnMount || autoStartedRef.current || session.isVoiceActive) {
       return;
     }
@@ -100,7 +93,14 @@ function VoiceAssistantScreenContent({
       await session.interruptVoiceOutput();
       return;
     }
-    setVoiceInputMuted(isVoiceRunning);
+    if (!isVoiceRunning) {
+      await session.toggleVoice();
+      return;
+    }
+    if (session.supportsVoiceInputMute) {
+      await session.toggleVoiceInputMuted();
+      return;
+    }
     await session.toggleVoice();
   };
 
@@ -108,7 +108,6 @@ function VoiceAssistantScreenContent({
     if (session.isVoiceActive) {
       await session.toggleVoice();
     }
-    setVoiceInputMuted(false);
     onExitVoice?.();
   };
 
@@ -220,7 +219,7 @@ function VoiceAssistantScreenContent({
               className={
                 isAssistantSpeaking
                   ? voiceAssistantVoiceThemeClass.controlShellSpeaking
-                  : isVoiceRunning
+                  : isVoiceRunning && !isVoiceInputMuted
                   ? voiceAssistantVoiceThemeClass.controlShell
                   : voiceAssistantVoiceThemeClass.controlShellMuted
               }
@@ -233,7 +232,7 @@ function VoiceAssistantScreenContent({
                 name={isAssistantSpeaking ? 'close' : 'mic'}
                 size={26}
                 color={
-                  isAssistantSpeaking ? '#FFFFFF' : isVoiceRunning ? '#111827' : '#FFFFFF'
+                  isAssistantSpeaking ? '#FFFFFF' : isVoiceRunning && !isVoiceInputMuted ? '#111827' : '#FFFFFF'
                 }
               />
             </TouchableOpacity>

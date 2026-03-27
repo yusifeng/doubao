@@ -25,6 +25,14 @@ export class MockDialogEngineProvider implements DialogEngineProvider {
     this.listener?.({ type: 'engine_stop', sessionId: 'mock-session' });
   }
 
+  async pauseTalking(): Promise<void> {
+    // noop
+  }
+
+  async resumeTalking(): Promise<void> {
+    // noop
+  }
+
   async interruptCurrentDialog(): Promise<void> {
     // noop
   }

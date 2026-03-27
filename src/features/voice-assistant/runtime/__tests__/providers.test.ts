@@ -65,6 +65,8 @@ describe('createVoiceAssistantProviders platform routing', () => {
         prepare: jest.fn(),
         startConversation: jest.fn(),
         stopConversation: jest.fn(),
+        pauseTalking: jest.fn(),
+        resumeTalking: jest.fn(),
         sendTextQuery: jest.fn(),
         useClientTriggeredTts: jest.fn(),
         useServerTriggeredTts: jest.fn(),

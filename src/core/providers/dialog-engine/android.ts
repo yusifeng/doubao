@@ -18,6 +18,8 @@ type NativeDialogEngineModule = {
   prepare(options: Record<string, unknown>): Promise<void>;
   startConversation(options: Record<string, unknown>): Promise<void>;
   stopConversation(): Promise<void>;
+  pauseTalking(): Promise<void>;
+  resumeTalking(): Promise<void>;
   interruptCurrentDialog(): Promise<void>;
   sendTextQuery(payload: string): Promise<void>;
   useClientTriggeredTts(): Promise<void>;
@@ -152,6 +154,20 @@ export class AndroidDialogEngineProvider implements DialogEngineProvider {
 
   async stopConversation(): Promise<void> {
     await this.nativeModule?.stopConversation();
+  }
+
+  async pauseTalking(): Promise<void> {
+    if (!this.nativeModule) {
+      throw new Error('Dialog SDK native module is unavailable on this platform');
+    }
+    await this.nativeModule.pauseTalking();
+  }
+
+  async resumeTalking(): Promise<void> {
+    if (!this.nativeModule) {
+      throw new Error('Dialog SDK native module is unavailable on this platform');
+    }
+    await this.nativeModule.resumeTalking();
   }
 
   async interruptCurrentDialog(): Promise<void> {
