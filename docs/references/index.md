@@ -7,3 +7,4 @@
 - [expo-rn-agent-reference.md](./expo-rn-agent-reference.md)
 - [expo-android-debug-runbook.md](./expo-android-debug-runbook.md)
 - [dialog-sdk-event-contract.md](./dialog-sdk-event-contract.md)
+- [voice-fault-signatures.md](./voice-fault-signatures.md)

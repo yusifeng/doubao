@@ -26,6 +26,39 @@
 
 ## Entries
 
+## 2026-03-29 04:06 (Asia/Shanghai) - refactor-voice-chat-flow-stabilization-v2
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/useRealtimeDemoLoop.ts`
+  - `src/features/voice-assistant/runtime/dialog-orchestrator/*`
+  - `src/core/providers/dialog-engine/types.ts`
+  - `src/core/providers/dialog-engine/android.ts`
+  - `src/core/providers/dialog-engine/__tests__/android.nativeEventContract.test.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `docs/exec-plans/active/plan-voice-chat-flow-stabilization-v2.md`
+  - `docs/references/dialog-sdk-event-contract.md`
+  - `docs/references/expo-android-debug-runbook.md`
+  - `docs/references/voice-fault-signatures.md`
+  - `docs/references/index.md`
+- Summary:
+  - Introduced Android dialog orchestrator building blocks (`state/reducer/invariants/commandQueue/sessionController/replyDrivers`) and wired runtime control-plane calls through serialized session control.
+  - Expanded dialog event normalization contract with metadata fields (`nativeMessageType/dialogWorkMode/inputMode/textMode/directive*/dialogId/turnIndex`) and aligned runtime structured logs for turn/session replay.
+  - Hardened custom/official reply handling paths, including explicit reply ownership, platform leak guarding, official finalize fallback handling, and client-triggered TTS policy parsing.
+  - Added/updated regression tests for event contract, queue serialization timeout behavior, stale/retired event filtering, and Android voice/text mixed lifecycle stability.
+  - Completed Phase 0-3 documentation loop: contract truth tables, turn contract, runbook timing criteria, fault-signature handbook, and full checkbox closure in active execution plan.
+- Tests:
+  - `pnpm run test -- --runInBand src/features/voice-assistant/runtime/dialog-orchestrator/__tests__/commandQueue.test.ts src/features/voice-assistant/runtime/dialog-orchestrator/__tests__/sessionController.test.ts src/features/voice-assistant/runtime/dialog-orchestrator/__tests__/reducer.test.ts src/features/voice-assistant/runtime/dialog-orchestrator/__tests__/officialS2SReplyDriver.test.ts src/features/voice-assistant/runtime/dialog-orchestrator/__tests__/customLlmReplyDriver.test.ts src/core/providers/dialog-engine/__tests__/android.nativeEventContract.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx` (pass, 8 suites / 52 tests)
+  - `pnpm exec tsc --noEmit` (fails with pre-existing issues in `runtimeConfig.ts` and `VoiceAssistantConversationScreen.test.tsx`, unrelated to this batch)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings after queue fix)
+- Risk:
+  - `useTextChat.ts` 已完成主链抽离与控制面收敛，但文件仍较大；后续继续做深度 facade 瘦身时需重新验证事件闭包与 ref 生命周期。
+  - `ASR_INFO` 真机语义仍受当前环境无设备接入限制，已记录临时决策；后续真机复验可能触发时序阈值微调。
+- Rollback:
+  - Revert the scoped runtime/provider/doc files above to return to pre-orchestrator behavior and prior plan/doc state.
+
 ## 2026-03-29 01:54 (Asia/Shanghai) - fix-custom-llm-s2s-voice-turn-stability
 
 - Commit: pending

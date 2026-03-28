@@ -1,15 +1,30 @@
 export type DialogConversationInputMode = 'audio' | 'text';
 
+export type DialogEventTextMode = 'none' | 'delta' | 'aggregate' | 'final_from_last_partial';
+
+export type DialogEventBase = {
+  sessionId?: string;
+  raw?: string;
+  nativeMessageType?: string;
+  dialogWorkMode?: DialogWorkMode;
+  inputMode?: DialogConversationInputMode;
+  textMode?: DialogEventTextMode;
+  directiveName?: string;
+  directiveRet?: number;
+  dialogId?: string;
+  turnIndex?: number;
+};
+
 export type DialogEngineEvent =
-  | { type: 'engine_start'; sessionId?: string; raw?: string }
-  | { type: 'session_ready'; sessionId?: string; raw?: string }
-  | { type: 'engine_stop'; sessionId?: string; raw?: string }
-  | { type: 'error'; sessionId?: string; raw?: string; errorCode?: number; errorMessage?: string }
-  | { type: 'asr_start'; sessionId?: string; raw?: string }
-  | { type: 'asr_partial'; sessionId?: string; text: string; raw?: string }
-  | { type: 'asr_final'; sessionId?: string; text: string; raw?: string }
-  | { type: 'chat_partial'; sessionId?: string; text: string; raw?: string }
-  | { type: 'chat_final'; sessionId?: string; text: string; raw?: string };
+  | ({ type: 'engine_start' } & DialogEventBase)
+  | ({ type: 'session_ready' } & DialogEventBase)
+  | ({ type: 'engine_stop' } & DialogEventBase)
+  | ({ type: 'error'; errorCode?: number; errorMessage?: string } & DialogEventBase)
+  | ({ type: 'asr_start' } & DialogEventBase)
+  | ({ type: 'asr_partial'; text: string } & DialogEventBase)
+  | ({ type: 'asr_final'; text: string } & DialogEventBase)
+  | ({ type: 'chat_partial'; text: string } & DialogEventBase)
+  | ({ type: 'chat_final'; text: string } & DialogEventBase);
 
 export type DialogPrepareConfig = {
   appId: string;

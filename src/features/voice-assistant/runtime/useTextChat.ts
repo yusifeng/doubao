@@ -34,6 +34,20 @@ import type {
   DialogEngineEvent,
   DialogWorkMode,
 } from '../../../core/providers/dialog-engine/types';
+import { SessionController } from './dialog-orchestrator/sessionController';
+import { createInitialDialogOrchestratorState } from './dialog-orchestrator/state';
+import { reduceDialogOrchestratorState } from './dialog-orchestrator/reducer';
+import type { DialogOrchestratorAction } from './dialog-orchestrator/types';
+import {
+  classifyClientTriggeredTtsError,
+  parseDirectiveRet,
+} from './dialog-orchestrator/replyDrivers/ttsArmingPolicy';
+import {
+  finalizeOfficialS2SReply,
+  mergeOfficialS2SReplyDraft,
+} from './dialog-orchestrator/replyDrivers/officialS2SReplyDriver';
+import { shouldDropPlatformReplyInCustomTurn } from './dialog-orchestrator/replyDrivers/customLlmReplyDriver';
+import { analyzePcm16Energy, concatAudioChunks } from './useRealtimeDemoLoop';
 
 export type UseTextChatResult = {
   status: Conversation['status'];
@@ -122,73 +136,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
   });
 }
 
-function analyzePcm16Energy(frame: Uint8Array): { peak: number; rms: number } {
-  if (frame.length < 2) {
-    return { peak: 0, rms: 0 };
-  }
-
-  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-  let peak = 0;
-  let sumSquares = 0;
-  let sampleCount = 0;
-
-  for (let offset = 0; offset + 1 < frame.length; offset += 2) {
-    const sample = view.getInt16(offset, true) / 32768;
-    const amplitude = Math.abs(sample);
-    if (amplitude > peak) {
-      peak = amplitude;
-    }
-    sumSquares += sample * sample;
-    sampleCount += 1;
-  }
-
-  if (sampleCount === 0) {
-    return { peak: 0, rms: 0 };
-  }
-
-  return {
-    peak,
-    rms: Math.sqrt(sumSquares / sampleCount),
-  };
-}
-
-function concatAudioChunks(chunks: Uint8Array[]): Uint8Array {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return merged;
-}
-
 function mergeAssistantDraft(currentDraft: string, incomingText: string): string {
-  if (!incomingText) {
-    return currentDraft;
-  }
-  if (!currentDraft) {
-    return incomingText;
-  }
-  if (incomingText.startsWith(currentDraft) || incomingText.includes(currentDraft)) {
-    return incomingText;
-  }
-  if (
-    currentDraft.startsWith(incomingText) ||
-    currentDraft.includes(incomingText) ||
-    currentDraft.endsWith(incomingText)
-  ) {
-    return currentDraft;
-  }
-
-  const maxOverlap = Math.min(currentDraft.length, incomingText.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    if (currentDraft.slice(-overlap) === incomingText.slice(0, overlap)) {
-      return `${currentDraft}${incomingText.slice(overlap)}`;
-    }
-  }
-
-  return `${currentDraft}${incomingText}`;
+  return mergeOfficialS2SReplyDraft(currentDraft, incomingText);
 }
 
 function resolveConversationSystemPrompt(
@@ -209,6 +158,10 @@ export function useTextChat(): UseTextChatResult {
   const runtimeConfigRef = useRef(runtimeConfig);
   const runtimeConfigHydratedRef = useRef(runtimeConfigHydrated);
   const providers = useMemo(() => createVoiceAssistantProviders(runtimeConfig), [runtimeConfig]);
+  const androidSessionController = useMemo(
+    () => new SessionController(providers.dialogEngine),
+    [providers.dialogEngine],
+  );
   const machine = useSessionMachine();
   const isAndroidDialogMode = Platform.OS === 'android' && providers.dialogEngine.isSupported();
   const replyChainMode = runtimeConfig.replyChainMode;
@@ -268,6 +221,8 @@ export function useTextChat(): UseTextChatResult {
   const androidObservedPlatformReplyInCustomRef = useRef(false);
   const androidRetiredSessionIdsRef = useRef<string[]>([]);
   const micIssueLastHintAtRef = useRef(0);
+  const orchestratorStateRef = useRef(createInitialDialogOrchestratorState());
+  const dialogSessionEpochRef = useRef(0);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -515,9 +470,9 @@ export function useTextChat(): UseTextChatResult {
       void providers.audio.stopPlayback();
       void providers.audio.abortRecognition();
       void providers.s2s.disconnect();
-      void providers.dialogEngine.destroy();
+      void androidSessionController.destroy();
     },
-    [providers.audio, providers.dialogEngine, providers.s2s, resetRealtimeCallState],
+    [androidSessionController, providers.audio, providers.s2s, resetRealtimeCallState],
   );
 
   const ensureS2SSession = useCallback(async () => {
@@ -609,6 +564,28 @@ export function useTextChat(): UseTextChatResult {
     [providers.observability],
   );
 
+  const dispatchDialogOrchestrator = useCallback((action: DialogOrchestratorAction) => {
+    orchestratorStateRef.current = reduceDialogOrchestratorState(orchestratorStateRef.current, action);
+    return orchestratorStateRef.current;
+  }, []);
+
+  const buildDialogLogContext = useCallback(
+    (extra?: Record<string, unknown>) => ({
+      sessionEpoch: orchestratorStateRef.current.session.sessionEpoch,
+      sessionId: orchestratorStateRef.current.session.sdkSessionId ?? androidDialogSessionIdRef.current,
+      dialogId: orchestratorStateRef.current.session.dialogId,
+      turnId: orchestratorStateRef.current.turn.turnId,
+      mode: orchestratorStateRef.current.session.interactionMode ?? androidDialogModeRef.current,
+      replyChain: orchestratorStateRef.current.session.replyChain ?? replyChainMode,
+      workMode: orchestratorStateRef.current.session.workMode ?? androidDialogWorkMode,
+      phase: orchestratorStateRef.current.turn.phase,
+      replyOwner: orchestratorStateRef.current.turn.replyOwner,
+      generation: orchestratorStateRef.current.generation.replyGeneration ?? androidReplyGenerationRef.current,
+      ...extra,
+    }),
+    [androidDialogWorkMode, replyChainMode],
+  );
+
   const ensureAndroidDialogPrepared = useCallback(async () => {
     if (!useAndroidDialogRuntime) {
       return;
@@ -618,10 +595,10 @@ export function useTextChat(): UseTextChatResult {
     if (!needsPrepare) {
       return;
     }
-    await providers.dialogEngine.prepare({ dialogWorkMode: androidDialogWorkMode });
+    await androidSessionController.prepare({ dialogWorkMode: androidDialogWorkMode });
     androidDialogPreparedRef.current = true;
     androidDialogPreparedWorkModeRef.current = androidDialogWorkMode;
-  }, [androidDialogWorkMode, providers.dialogEngine, useAndroidDialogRuntime]);
+  }, [androidDialogWorkMode, androidSessionController, useAndroidDialogRuntime]);
 
   const persistPendingAndroidAssistantDraft = useCallback(async (options?: { conversationId?: string | null }) => {
     const targetConversationId =
@@ -673,7 +650,7 @@ export function useTextChat(): UseTextChatResult {
         rememberRetiredAndroidDialogSession(androidDialogSessionIdRef.current);
         androidDialogSessionIdRef.current = null;
         androidDialogConversationIdRef.current = null;
-        await providers.dialogEngine.stopConversation();
+        await androidSessionController.stopConversation();
         androidDialogModeRef.current = null;
         androidAssistantDraftRef.current = '';
         setPendingAssistantReply('');
@@ -689,7 +666,18 @@ export function useTextChat(): UseTextChatResult {
       androidDialogClientTtsEnabledRef.current = false;
       androidDialogClientTtsArmingRef.current = false;
       androidDialogClientTtsLastAttemptAtRef.current = 0;
-      await providers.dialogEngine.startConversation({
+      const nextSessionEpoch = dialogSessionEpochRef.current + 1;
+      dialogSessionEpochRef.current = nextSessionEpoch;
+      dispatchDialogOrchestrator({
+        type: 'session_starting',
+        sessionEpoch: nextSessionEpoch,
+        conversationId: nextConversationId,
+        interactionMode: mode,
+        replyChain: replyChainMode,
+        workMode: androidDialogWorkMode,
+      });
+      dispatchDialogOrchestrator({ type: 'generation_bump_command' });
+      await androidSessionController.startConversation({
         inputMode,
         model: VOICE_ASSISTANT_DIALOG_MODEL,
         speaker: runtimeConfig.voice.speakerId,
@@ -709,14 +697,20 @@ export function useTextChat(): UseTextChatResult {
       // We switch trigger mode at turn-level events (`asr_start` / `voice_round`).
       androidDialogModeRef.current = mode;
       androidDialogConversationIdRef.current = nextConversationId;
+      providers.observability.log('info', 'dialog.session starting', buildDialogLogContext());
     },
     [
       activeConversationId,
+      androidDialogWorkMode,
+      androidSessionController,
+      buildDialogLogContext,
+      dispatchDialogOrchestrator,
       ensureAndroidDialogPrepared,
+      providers.observability,
       useAndroidDialogRuntime,
-      providers.dialogEngine,
       persistPendingAndroidAssistantDraft,
       rememberRetiredAndroidDialogSession,
+      replyChainMode,
       runtimeConfig.voice.speakerId,
     ],
   );
@@ -737,15 +731,19 @@ export function useTextChat(): UseTextChatResult {
       androidDialogClientTtsEnabledRef.current = false;
       androidDialogClientTtsArmingRef.current = false;
       androidDialogClientTtsLastAttemptAtRef.current = 0;
-      await providers.dialogEngine.stopConversation();
+      dispatchDialogOrchestrator({ type: 'session_stopping' });
+      dispatchDialogOrchestrator({ type: 'generation_bump_command' });
+      await androidSessionController.stopConversation();
       androidDialogModeRef.current = null;
       androidAssistantDraftRef.current = '';
       setPendingAssistantReply('');
       setLiveUserTranscript('');
+      dispatchDialogOrchestrator({ type: 'session_stopped' });
     },
     [
+      androidSessionController,
+      dispatchDialogOrchestrator,
       persistPendingAndroidAssistantDraft,
-      providers.dialogEngine,
       rememberRetiredAndroidDialogSession,
       useAndroidDialogRuntime,
     ],
@@ -780,10 +778,15 @@ export function useTextChat(): UseTextChatResult {
 
       if (!androidDialogSessionReadyRef.current) {
         androidDialogClientTtsEnabledRef.current = false;
-        providers.observability.log('warn', 'custom llm voice setup failed: dialog session not ready', {
-          generation,
-          source,
-        });
+        providers.observability.log(
+          'warn',
+          'custom llm voice setup failed: dialog session not ready',
+          buildDialogLogContext({
+            generation,
+            source,
+            directiveName: 'useClientTriggeredTts',
+          }),
+        );
         if (throwOnFailure) {
           throw new Error('custom llm voice chain not ready');
         }
@@ -797,41 +800,61 @@ export function useTextChat(): UseTextChatResult {
       let lastMessage = 'unknown error';
       for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
         try {
-          await providers.dialogEngine.useClientTriggeredTts();
+          await androidSessionController.useClientTriggeredTts();
           androidDialogClientTtsEnabledRef.current = true;
-          providers.observability.log('info', 'custom llm client tts enabled', {
-            generation,
-            source,
-            attempt,
-          });
+          providers.observability.log(
+            'info',
+            'custom llm client tts enabled',
+            buildDialogLogContext({
+              generation,
+              source,
+              attempt,
+              directiveName: 'useClientTriggeredTts',
+              directiveRet: 0,
+            }),
+          );
           return true;
         } catch (error) {
           const message = error instanceof Error ? error.message : 'unknown error';
           lastMessage = message;
-          const alreadyClientMode = message.includes('400061');
+          const directiveRet = parseDirectiveRet(message);
+          const policy = classifyClientTriggeredTtsError(message);
+          const alreadyClientMode = policy === 'already_enabled';
           if (alreadyClientMode) {
             // Some SDK builds return 400061 when the trigger mode is already client-side.
             androidDialogClientTtsEnabledRef.current = true;
-            providers.observability.log('info', 'custom llm client tts already enabled', {
-              generation,
-              source,
-              attempt,
-            });
+            providers.observability.log(
+              'info',
+              'custom llm client tts already enabled',
+              buildDialogLogContext({
+                generation,
+                source,
+                attempt,
+                directiveName: 'useClientTriggeredTts',
+                directiveRet: directiveRet ?? 400061,
+              }),
+            );
             return true;
           }
           androidDialogClientTtsEnabledRef.current = false;
           const lower = message.toLowerCase();
           const shouldRetry =
-            message.includes('400060') ||
+            policy === 'not_ready' ||
             lower.includes('without init') ||
             lower.includes('not ready');
-          providers.observability.log('warn', 'custom llm voice setup failed: cannot enable client tts', {
-            message,
-            generation,
-            source,
-            attempt,
-            shouldRetry,
-          });
+          providers.observability.log(
+            'warn',
+            'custom llm voice setup failed: cannot enable client tts',
+            buildDialogLogContext({
+              message,
+              generation,
+              source,
+              attempt,
+              shouldRetry,
+              directiveName: 'useClientTriggeredTts',
+              directiveRet,
+            }),
+          );
           if (!shouldRetry || attempt >= maxRetries) {
             break;
           }
@@ -845,7 +868,13 @@ export function useTextChat(): UseTextChatResult {
       }
       return false;
     },
-    [providers.dialogEngine, providers.observability, replyChainMode, useAndroidDialogRuntime],
+    [
+      androidSessionController,
+      buildDialogLogContext,
+      providers.observability,
+      replyChainMode,
+      useAndroidDialogRuntime,
+    ],
   );
 
   const armAndroidClientTriggeredTtsInBackground = useCallback(
@@ -902,6 +931,9 @@ export function useTextChat(): UseTextChatResult {
 
       const generation = androidReplyGenerationRef.current + 1;
       androidReplyGenerationRef.current = generation;
+      dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
+      dispatchDialogOrchestrator({ type: 'turn_reply_owner', owner: 'custom' });
+      dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'replying' });
       const conversation = conversations.find((item) => item.id === targetConversationId) ?? null;
       if (conversation && !conversation.systemPromptSnapshot?.trim()) {
         await repo.updateConversationSystemPromptSnapshot(targetConversationId, KONAN_CHARACTER_MANIFEST);
@@ -944,16 +976,18 @@ export function useTextChat(): UseTextChatResult {
             providers.observability.log(
               'warn',
               'custom llm voice round proceeding without s2s tts; text will still be generated',
-              { generation },
+              buildDialogLogContext({ generation }),
             );
             try {
-              await providers.dialogEngine.interruptCurrentDialog();
+              await androidSessionController.interruptCurrentDialog();
             } catch (interruptError) {
               const interruptMessage =
                 interruptError instanceof Error ? interruptError.message : 'unknown error';
-              providers.observability.log('warn', 'failed to interrupt platform voice before custom fallback', {
-                message: interruptMessage,
-              });
+              providers.observability.log(
+                'warn',
+                'failed to interrupt platform voice before custom fallback',
+                buildDialogLogContext({ message: interruptMessage }),
+              );
             }
             setConnectivityHint('自定义LLM文本已生成，S2S语音播报未就绪。');
           }
@@ -979,6 +1013,7 @@ export function useTextChat(): UseTextChatResult {
           }
           assistantText += chunk;
           setPendingAssistantReply(assistantText);
+          dispatchDialogOrchestrator({ type: 'draft_reply_delta', text: chunk, source: 'custom' });
           if (!started) {
             providers.observability.log('info', 'custom llm voice round started', {
               provider: llmConfig.provider || 'openai-compatible',
@@ -995,7 +1030,7 @@ export function useTextChat(): UseTextChatResult {
             updateRealtimeCallPhase('speaking');
             await updateConversationRuntimeStatus('speaking', { refreshConversations: true });
             try {
-              await providers.dialogEngine.streamClientTtsText({
+              await androidSessionController.streamClientTtsText({
                 start: !started,
                 content: chunk,
                 end: false,
@@ -1003,15 +1038,19 @@ export function useTextChat(): UseTextChatResult {
               started = true;
             } catch (error) {
               const message = error instanceof Error ? error.message : 'unknown error';
-              providers.observability.log('warn', 'stream client tts failed; continue with custom text only', {
-                message,
-                generation,
-              });
+              providers.observability.log(
+                'warn',
+                'stream client tts failed; continue with custom text only',
+                buildDialogLogContext({
+                  message,
+                  generation,
+                }),
+              );
               canStreamViaClientTts = false;
               androidDialogClientTtsEnabledRef.current = false;
               setConnectivityHint('自定义LLM文本已生成，S2S语音播报中断。');
               try {
-                await providers.dialogEngine.interruptCurrentDialog();
+                await androidSessionController.interruptCurrentDialog();
               } catch {
                 // Best effort: platform voice may already be stopped.
               }
@@ -1029,7 +1068,7 @@ export function useTextChat(): UseTextChatResult {
         }
 
         if (canStreamViaClientTts) {
-          await providers.dialogEngine.streamClientTtsText({
+          await androidSessionController.streamClientTtsText({
             start: !started,
             content: '',
             end: true,
@@ -1044,6 +1083,7 @@ export function useTextChat(): UseTextChatResult {
         }
         setPendingAssistantReply('');
         await persistAssistantText(finalAssistantText);
+        dispatchDialogOrchestrator({ type: 'draft_reply_finalized', persisted: true });
         if (assistantMessageType === 'audio' && !canStreamViaClientTts) {
           providers.observability.log('warn', 'custom llm s2s voice unavailable; skip local tts fallback', {
             generation,
@@ -1063,13 +1103,15 @@ export function useTextChat(): UseTextChatResult {
         if (replyChainMode === 'custom_llm' && !partialText && !assistantPersisted) {
           androidDialogClientTtsEnabledRef.current = false;
           try {
-            await providers.dialogEngine.interruptCurrentDialog();
+            await androidSessionController.interruptCurrentDialog();
           } catch (interruptError) {
             const interruptErrorMessage =
               interruptError instanceof Error ? interruptError.message : 'unknown error';
-            providers.observability.log('warn', 'failed to interrupt platform voice after custom failure', {
-              message: interruptErrorMessage,
-            });
+            providers.observability.log(
+              'warn',
+              'failed to interrupt platform voice after custom failure',
+              buildDialogLogContext({ message: interruptErrorMessage }),
+            );
           }
           setConnectivityHint('自定义LLM语音回复失败，请重试。');
           await repo.appendMessage(targetConversationId, {
@@ -1081,6 +1123,7 @@ export function useTextChat(): UseTextChatResult {
           assistantPersisted = true;
         }
         setPendingAssistantReply('');
+        dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'interrupted' });
       }
 
       if (resumeVoiceAfterReply && voiceLoopActiveRef.current) {
@@ -1102,11 +1145,13 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      androidSessionController,
+      buildDialogLogContext,
       conversations,
+      dispatchDialogOrchestrator,
       useAndroidDialogRuntime,
       replyChainMode,
       llmConfig,
-      providers.dialogEngine,
       providers.observability,
       providers.reply,
       repo,
@@ -1138,8 +1183,9 @@ export function useTextChat(): UseTextChatResult {
       );
 
       try {
-        await providers.dialogEngine.interruptCurrentDialog();
+        await androidSessionController.interruptCurrentDialog();
         androidDialogInterruptedRef.current = true;
+        dispatchDialogOrchestrator({ type: 'turn_interrupted' });
         if (interruptedText) {
           const currentMessages = await repo.listMessages(targetConversationId);
           const lastMessage = currentMessages[currentMessages.length - 1];
@@ -1173,15 +1219,21 @@ export function useTextChat(): UseTextChatResult {
           setConversations(await repo.listConversations());
         }
         providers.observability.log('info', 'android dialog interrupted', {
-          source,
-          interruptedTextLength: interruptedText.length,
+          ...buildDialogLogContext({
+            source,
+            interruptedTextLength: interruptedText.length,
+          }),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : 'unknown error';
-        providers.observability.log('warn', 'failed to interrupt android dialog output', {
-          message,
-          source,
-        });
+        providers.observability.log(
+          'warn',
+          'failed to interrupt android dialog output',
+          buildDialogLogContext({
+            message,
+            source,
+          }),
+        );
         androidDialogInterruptedRef.current = false;
       } finally {
         androidDialogInterruptInFlightRef.current = false;
@@ -1189,10 +1241,12 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      androidSessionController,
+      buildDialogLogContext,
+      dispatchDialogOrchestrator,
       useAndroidDialogRuntime,
       isVoiceActive,
       pendingAssistantReply,
-      providers.dialogEngine,
       providers.observability,
       repo,
       syncConversationState,
@@ -1239,18 +1293,30 @@ export function useTextChat(): UseTextChatResult {
   const handleAndroidDialogEvent = useCallback(
     (event: DialogEngineEvent) => {
       const logIgnoredAndroidDialogEvent = (reason: string) => {
-        providers.observability.log('info', 'ignore stale android dialog event', {
-          reason,
-          eventType: event.type,
-          eventSessionId: event.sessionId,
-          activeSessionId: androidDialogSessionIdRef.current,
-        });
+        providers.observability.log(
+          'info',
+          'dialog.stale_drop',
+          buildDialogLogContext({
+            reason,
+            eventType: event.type,
+            eventSessionId: event.sessionId,
+            activeSessionId: androidDialogSessionIdRef.current,
+          }),
+        );
       };
 
-      providers.observability.log('info', 'android dialog event', {
-        type: event.type,
-        textLength: 'text' in event ? event.text.length : undefined,
-      });
+      providers.observability.log(
+        'info',
+        'dialog.event',
+        buildDialogLogContext({
+          type: event.type,
+          textLength: 'text' in event ? event.text.length : undefined,
+          nativeMessageType: event.nativeMessageType,
+          textMode: event.textMode,
+          directiveName: event.directiveName,
+          directiveRet: event.directiveRet,
+        }),
+      );
 
       switch (event.type) {
         case 'engine_start':
@@ -1271,6 +1337,10 @@ export function useTextChat(): UseTextChatResult {
           androidDialogClientTtsEnabledRef.current = false;
           androidDialogClientTtsArmingRef.current = false;
           androidDialogClientTtsLastAttemptAtRef.current = 0;
+          dispatchDialogOrchestrator({
+            type: 'session_started',
+            sdkSessionId: event.sessionId ?? null,
+          });
           setConnectivityHint('Android Dialog SDK 引擎已启动');
           break;
         case 'session_ready':
@@ -1292,6 +1362,11 @@ export function useTextChat(): UseTextChatResult {
             androidDialogSessionIdRef.current = event.sessionId;
           }
           androidDialogSessionReadyRef.current = true;
+          dispatchDialogOrchestrator({
+            type: 'session_ready',
+            sdkSessionId: event.sessionId ?? null,
+            dialogId: event.dialogId ?? event.sessionId ?? null,
+          });
           break;
         case 'engine_stop':
           if (event.sessionId) {
@@ -1313,6 +1388,8 @@ export function useTextChat(): UseTextChatResult {
           androidDialogClientTtsLastAttemptAtRef.current = 0;
           setConnectivityHint('Android Dialog SDK 引擎已停止');
           androidReplyGenerationRef.current += 1;
+          dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
+          dispatchDialogOrchestrator({ type: 'session_stopped' });
           resetRealtimeCallState();
           void updateConversationRuntimeStatus('idle', { refreshConversations: true });
           break;
@@ -1326,6 +1403,7 @@ export function useTextChat(): UseTextChatResult {
           }
           const message = event.errorMessage ?? event.raw ?? '未知错误';
           setConnectivityHint(`Android Dialog SDK 错误：${message}`);
+          dispatchDialogOrchestrator({ type: 'session_error' });
           void updateConversationRuntimeStatus('error', { refreshConversations: true });
           if (voiceLoopActiveRef.current) {
             updateRealtimeCallPhase('idle');
@@ -1373,6 +1451,12 @@ export function useTextChat(): UseTextChatResult {
             armAndroidClientTriggeredTtsInBackground('asr_start');
             break;
           }
+          dispatchDialogOrchestrator({
+            type: 'turn_started',
+            assistantMessageType: 'audio',
+            platformReplyAllowed: replyChainMode !== 'custom_llm',
+          });
+          dispatchDialogOrchestrator({ type: 'draft_clear' });
           if (replyChainMode === 'custom_llm') {
             armAndroidClientTriggeredTtsInBackground('asr_start');
           }
@@ -1391,6 +1475,7 @@ export function useTextChat(): UseTextChatResult {
             return;
           }
           setLiveUserTranscript(event.text);
+          dispatchDialogOrchestrator({ type: 'draft_live_transcript', text: event.text });
           updateRealtimeListeningState('hearing');
           void updateConversationRuntimeStatus('listening', { refreshConversations: true });
           break;
@@ -1414,9 +1499,11 @@ export function useTextChat(): UseTextChatResult {
           // so the next assistant reply can flow through.
           androidDialogInterruptedRef.current = false;
           setLiveUserTranscript(finalUserText);
+          dispatchDialogOrchestrator({ type: 'turn_user_text', text: finalUserText });
           updateRealtimeListeningState('awaiting_reply');
           const replyGeneration = androidReplyGenerationRef.current + 1;
           androidReplyGenerationRef.current = replyGeneration;
+          dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
           void (async () => {
             try {
               await repo.appendMessage(turnConversationId, {
@@ -1464,21 +1551,30 @@ export function useTextChat(): UseTextChatResult {
           })();
           break;
         case 'chat_partial':
-          if (replyChainMode === 'custom_llm') {
+          if (
+            shouldDropPlatformReplyInCustomTurn({
+              replyChainMode,
+              replyOwner: orchestratorStateRef.current.turn.replyOwner,
+            })
+          ) {
             if (!androidObservedPlatformReplyInCustomRef.current) {
               androidObservedPlatformReplyInCustomRef.current = true;
-              providers.observability.log('warn', 'platform chat_partial received while custom_llm is active', {
-                textLength: event.text.length,
-              });
+              providers.observability.log(
+                'warn',
+                'dialog.leak_guard platform chat_partial received while custom_llm is active',
+                buildDialogLogContext({
+                  textLength: event.text.length,
+                }),
+              );
               void (async () => {
                 try {
-                  await providers.dialogEngine.interruptCurrentDialog();
+                  await androidSessionController.interruptCurrentDialog();
                 } catch (error) {
                   const message = error instanceof Error ? error.message : 'unknown error';
                   providers.observability.log(
                     'warn',
                     'failed to interrupt platform voice after platform chat_partial',
-                    { message },
+                    buildDialogLogContext({ message }),
                   );
                 }
               })();
@@ -1489,23 +1585,39 @@ export function useTextChat(): UseTextChatResult {
             return;
           }
           setLiveUserTranscript('');
+          dispatchDialogOrchestrator({ type: 'turn_reply_owner', owner: 'platform' });
           androidAssistantDraftRef.current = mergeAssistantDraft(
             androidAssistantDraftRef.current,
             event.text,
           );
+          dispatchDialogOrchestrator({
+            type: 'draft_reply_delta',
+            text: event.text,
+            source: 'platform',
+          });
           setPendingAssistantReply(androidAssistantDraftRef.current);
           if (voiceLoopActiveRef.current) {
             updateRealtimeCallPhase('speaking');
+            dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'speaking' });
           }
           void updateConversationRuntimeStatus('speaking', { refreshConversations: true });
           break;
         case 'chat_final':
-          if (replyChainMode === 'custom_llm') {
+          if (
+            shouldDropPlatformReplyInCustomTurn({
+              replyChainMode,
+              replyOwner: orchestratorStateRef.current.turn.replyOwner,
+            })
+          ) {
             if (!androidObservedPlatformReplyInCustomRef.current) {
               androidObservedPlatformReplyInCustomRef.current = true;
-              providers.observability.log('warn', 'platform chat_final received while custom_llm is active', {
-                textLength: event.text.length,
-              });
+              providers.observability.log(
+                'warn',
+                'dialog.leak_guard platform chat_final received while custom_llm is active',
+                buildDialogLogContext({
+                  textLength: event.text.length,
+                }),
+              );
             }
             return;
           }
@@ -1515,7 +1627,12 @@ export function useTextChat(): UseTextChatResult {
           void (async () => {
             const finalConversationId = androidDialogConversationIdRef.current ?? activeConversationId;
             androidReplyGenerationRef.current += 1;
-            const draftText = (event.text || androidAssistantDraftRef.current || pendingAssistantReply).trim();
+            dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
+            const draftText = finalizeOfficialS2SReply(
+              event.text,
+              androidAssistantDraftRef.current,
+              pendingAssistantReply,
+            ).trim();
             const finalText = sanitizeAssistantText(draftText);
             setLiveUserTranscript('');
             setPendingAssistantReply('');
@@ -1537,9 +1654,14 @@ export function useTextChat(): UseTextChatResult {
                 });
               }
             }
+            dispatchDialogOrchestrator({
+              type: 'draft_reply_finalized',
+              persisted: Boolean(finalConversationId && finalText),
+            });
             if (voiceLoopActiveRef.current && androidDialogModeRef.current === 'voice') {
               updateRealtimeListeningState('ready');
               updateRealtimeCallPhase('listening');
+              dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'listening' });
               await updateConversationRuntimeStatus('listening', { refreshConversations: true });
             } else {
               await stopAndroidDialogConversation();
@@ -1557,10 +1679,12 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      androidSessionController,
+      buildDialogLogContext,
+      dispatchDialogOrchestrator,
       maybeInterruptOnBargeIn,
       pendingAssistantReply,
       replyChainMode,
-      providers.dialogEngine,
       providers.observability,
       repo,
       runAndroidReplyFlow,
@@ -1711,16 +1835,16 @@ export function useTextChat(): UseTextChatResult {
         if (useCustomVoiceS2STts) {
           let playedByS2SVoice = false;
           try {
-            await providers.dialogEngine.prepare({ dialogWorkMode: 'delegate_chat_tts_text' });
-            await providers.dialogEngine.startConversation({
+            await androidSessionController.prepare({ dialogWorkMode: 'delegate_chat_tts_text' });
+            await androidSessionController.startConversation({
               inputMode: 'text',
               model: VOICE_ASSISTANT_DIALOG_MODEL,
               speaker: runtimeConfig.voice.speakerId,
               characterManifest: KONAN_CHARACTER_MANIFEST,
               botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
             });
-            await providers.dialogEngine.useClientTriggeredTts();
-            await providers.dialogEngine.streamClientTtsText({
+            await androidSessionController.useClientTriggeredTts();
+            await androidSessionController.streamClientTtsText({
               start: true,
               content: assistantText,
               end: true,
@@ -1732,7 +1856,7 @@ export function useTextChat(): UseTextChatResult {
             providers.observability.log('warn', 'failed to speak assistant text via s2s voice', { message });
           } finally {
             try {
-              await providers.dialogEngine.stopConversation();
+              await androidSessionController.stopConversation();
             } catch {
               // Best effort: playback session may already be stopped.
             }
@@ -1747,8 +1871,8 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      androidSessionController,
       generateAssistantReplyFromProvider,
-      providers.dialogEngine,
       llmConfig,
       providers.audio,
       providers.observability,
@@ -1784,7 +1908,7 @@ export function useTextChat(): UseTextChatResult {
             await syncConversationState();
             await ensureAndroidDialogConversation('text', { forceRestart: true });
             await updateConversationRuntimeStatus('thinking', { refreshConversations: true });
-            await providers.dialogEngine.sendTextQuery(content);
+            await androidSessionController.sendTextQuery(content);
           }, { waitIfLocked: true });
           shouldFinalizeImmediately = false;
           return;
@@ -1818,9 +1942,9 @@ export function useTextChat(): UseTextChatResult {
     },
     [
       activeConversationId,
+      androidSessionController,
       ensureAndroidDialogConversation,
       providers.observability,
-      providers.dialogEngine,
       repo,
       resetRealtimeCallState,
       runTextRound,
@@ -1828,7 +1952,6 @@ export function useTextChat(): UseTextChatResult {
       stopAndroidDialogConversation,
       withCallLifecycleLock,
       useAndroidDialogTextRuntime,
-      useAndroidDialogRuntime,
       updateConversationRuntimeStatus,
     ],
   );
@@ -2179,7 +2302,7 @@ export function useTextChat(): UseTextChatResult {
 
     try {
       if (nextMuted) {
-        await providers.dialogEngine.pauseTalking();
+        await androidSessionController.pauseTalking();
         if (!isStillInActiveVoiceCall()) {
           return;
         }
@@ -2187,7 +2310,7 @@ export function useTextChat(): UseTextChatResult {
         setPendingAssistantReply('');
         updateRealtimeListeningState('ready');
       } else {
-        await providers.dialogEngine.resumeTalking();
+        await androidSessionController.resumeTalking();
         if (!isStillInActiveVoiceCall()) {
           return;
         }
@@ -2204,9 +2327,9 @@ export function useTextChat(): UseTextChatResult {
       }
     }
   }, [
+    androidSessionController,
     supportsVoiceInputMute,
     isVoiceActive,
-    providers.dialogEngine,
     providers.observability,
     setVoiceInputMutedRuntime,
     updateConversationRuntimeStatus,

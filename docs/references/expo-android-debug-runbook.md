@@ -599,3 +599,79 @@ pnpm exec expo start -c
 
 - `official_s2s`：追求端到端稳定和官方完整能力
 - `custom_llm`：允许替换“内容大脑”，但不放弃 S2S 的 voice 能力（音色/可控性）
+
+---
+
+## 15. 事件时序判据（Phase 0 固化）
+
+本节用于“1 次 logcat 复盘”时快速判定链路是否健康。
+
+### 15.1 单轮健康链路（official_s2s + voice）
+
+期望关键序列（允许中间穿插 debug 日志）：
+
+1. `dialog.event type=engine_start`
+2. `dialog.event type=session_ready`
+3. `dialog.event type=asr_start`
+4. `dialog.event type=asr_partial`（可重复）
+5. `dialog.event type=asr_final`
+6. `dialog.event type=chat_partial`（可重复）
+7. `dialog.event type=chat_final`
+8. 最终回到 listening（`voiceRuntimeHint=正在听你说`）
+
+超时判据（经验值）：
+
+- `engine_start -> session_ready`：建议 `< 2s`。
+- `asr_final -> first chat_partial`：建议 `< 4s`（网络波动可放宽到 `< 6s`）。
+- `chat_final -> listening`：建议 `< 1s`。
+
+### 15.2 单轮健康链路（custom_llm + voice）
+
+期望关键序列：
+
+1. `dialog.event type=engine_start`
+2. `dialog.event type=session_ready`
+3. `dialog.event type=asr_start`
+4. `custom llm client tts enabled` 或 `custom llm client tts already enabled`
+5. `dialog.event type=asr_final`
+6. `custom llm voice round started`
+7. `streamClientTtsText` 连续发送（start/content/end）
+8. assistant 文本落库，回到 listening
+
+异常判据：
+
+- 出现 `custom llm voice setup failed: cannot enable client tts` 且后续无播音：属于 F2 分叉。
+- custom 模式下出现 `dialog.leak_guard platform chat_partial/chat_final ...`：属于 F3 分叉（平台泄漏）。
+
+### 15.3 推荐抓取命令
+
+先清理旧日志：
+
+```bash
+adb logcat -c
+```
+
+复现场景后抓取：
+
+```bash
+adb logcat -d | rg "dialog.event|dialog.stale_drop|custom llm|voice-assistant|RNDialogEngine" | tail -n 400
+```
+
+如果只想看契约字段：
+
+```bash
+adb logcat -d | rg "sessionEpoch=|sessionId=|turnId=|replyChain=|replyOwner=|phase=" | tail -n 200
+```
+
+### 15.4 快速判定表
+
+- 看不到 `session_ready`：会话未就绪，先查 prepare/start 与 Native 初始化。
+- `asr_final` 已到但无 `chat_*`/custom round：回合卡在 reply 启动。
+- custom 下频繁 `400060`：delegate/workMode 或时序问题。
+- custom 下收到平台 `chat_*`：leak guard 在工作，但需要排查为何未接管。
+- 多个 sessionId 交叉：优先看 `dialog.stale_drop` 是否生效。
+
+关联文档：
+
+- 事件/指令契约：`docs/references/dialog-sdk-event-contract.md`
+- 故障签名手册：`docs/references/voice-fault-signatures.md`

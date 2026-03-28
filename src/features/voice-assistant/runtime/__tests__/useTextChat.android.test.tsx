@@ -1032,6 +1032,33 @@ describe('useTextChat android dialog sdk flow', () => {
     });
   });
 
+  it('ignores chat_final that arrives after active session has already stopped', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('当前文本轮');
+    });
+
+    await act(async () => {
+      emitEngineStart('text-session-disorder');
+      mockDialogListener?.({ type: 'engine_stop', sessionId: 'text-session-disorder' });
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '乱序晚到回复',
+        sessionId: 'text-session-disorder',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.messages.some((message) => message.content === '乱序晚到回复')).toBe(false);
+      expect(result.current.status).toBe('idle');
+    });
+  });
+
   it('ignores stale engine_start events that arrive after a new session is active', async () => {
     const { result } = renderHook(() => useTextChat());
 
@@ -1122,6 +1149,45 @@ describe('useTextChat android dialog sdk flow', () => {
       expect(result.current.voiceRuntimeHint).toBe('实时通话未开启');
       expect(result.current.status).toBe('idle');
     });
+  });
+
+  it('keeps stable state across long round barge-in and voice-text-voice switch', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      emitEngineStart('voice-session-combo');
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-combo' });
+      mockDialogListener?.({ type: 'asr_final', text: '第一轮问题', sessionId: 'voice-session-combo' });
+      mockDialogListener?.({ type: 'chat_partial', text: '第一轮回复进行中', sessionId: 'voice-session-combo' });
+      mockDialogListener?.({ type: 'asr_partial', text: '打断', sessionId: 'voice-session-combo' });
+      mockDialogListener?.({ type: 'chat_final', text: '第一轮最终回复', sessionId: 'voice-session-combo' });
+    });
+
+    await act(async () => {
+      await result.current.sendText('切到文本轮');
+    });
+
+    await act(async () => {
+      emitEngineStart('text-session-combo');
+      mockDialogListener?.({ type: 'chat_final', text: '文本轮回复', sessionId: 'text-session-combo' });
+    });
+
+    await waitFor(
+      () => {
+        expect(result.current.messages.some((message) => message.role === 'user' && message.content === '切到文本轮')).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+
+    expect(result.current.status).not.toBe('error');
   });
 
   it('restores runtime state when chat_final arrives without any usable text', async () => {
