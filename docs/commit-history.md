@@ -533,3 +533,30 @@
   - Two parallel proposal docs may cause interpretation divergence if contributors skip the consolidated TODO in the active plan.
 - Rollback:
   - Revert the listed documentation files to return to the previous planning/reference baseline.
+
+## 2026-03-29 03:19 (Asia/Shanghai) - voice-chat-week1-p0-hardening
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-chat-flow-stabilization-v2.md`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+- Summary:
+  - Updated Android dialog lifecycle lock semantics to support wait mode with timeout, preventing `sendText` from waiting indefinitely when a previous lifecycle operation stalls.
+  - Added timeout warning telemetry (`call lifecycle lock wait timed out`) so lock-contention failures are diagnosable from runtime logs.
+  - Fixed `asr_start` handling in custom voice speaking scenarios by performing draft reset and conversation binding before early-exit paths, reducing second-turn carry-over risk.
+  - Added Android runtime regression test for `toggleVoice` startup in-flight followed by `sendText`, verifying text round waits for lifecycle completion.
+  - Added custom LLM regressions for speaking-phase `asr_start` draft reset and custom text rounds bypassing Dialog SDK `sendTextQuery`.
+  - Synced active plan progress and Week 1 TODO checkboxes to reflect completed P0 loop items.
+- Tests:
+  - `pnpm -s jest src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx --runInBand` (pass)
+  - `pnpm -s tsc --noEmit` (fails, pre-existing unrelated type errors in `runtimeConfig.ts` and `VoiceAssistantConversationScreen.test.tsx`)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings after timeout hardening patch)
+- Risk:
+  - Lifecycle lock timeout now surfaces as a controlled failure path; if timeout is too aggressive under slow devices, text rounds may fail early instead of waiting longer.
+  - `asr_start` cleanup now happens in more speaking scenarios; if SDK emits noisy `asr_start` events, UI drafts may clear earlier than expected.
+- Rollback:
+  - Revert `useTextChat.ts` lock/`asr_start` adjustments and the two runtime test additions to restore previous behavior.

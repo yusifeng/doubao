@@ -73,6 +73,8 @@ const ANDROID_DIALOG_CLIENT_TTS_ARM_COOLDOWN_MS = 120;
 const ANDROID_DIALOG_CLIENT_TTS_RETRY_DELAY_MS = 120;
 const ANDROID_DIALOG_CLIENT_TTS_MAX_RETRIES = 3;
 const ANDROID_DIALOG_CLIENT_TTS_BACKGROUND_MAX_RETRIES = 8;
+const CALL_LIFECYCLE_LOCK_WAIT_TIMEOUT_MS = 3000;
+const CALL_LIFECYCLE_LOCK_POLL_INTERVAL_MS = 16;
 const VOICE_RUNTIME_CONFIG = {
   micInputHintCooldownMs: 10000,
   micRetryDelayMs: 1200,
@@ -561,6 +563,50 @@ export function useTextChat(): UseTextChatResult {
       }
     },
     [activeConversationId, machine, repo],
+  );
+
+  const withCallLifecycleLock = useCallback(
+    async (
+      task: () => Promise<void>,
+      options?: {
+        waitIfLocked?: boolean;
+        waitTimeoutMs?: number;
+      },
+    ) => {
+      if (callLifecycleLockRef.current) {
+        if (!options?.waitIfLocked) {
+          return;
+        }
+        const waitTimeoutMs = options.waitTimeoutMs ?? CALL_LIFECYCLE_LOCK_WAIT_TIMEOUT_MS;
+        try {
+          await withTimeout(
+            (async () => {
+              while (callLifecycleLockRef.current) {
+                await new Promise<void>((resolve) => {
+                  setTimeout(resolve, CALL_LIFECYCLE_LOCK_POLL_INTERVAL_MS);
+                });
+              }
+            })(),
+            waitTimeoutMs,
+            'call lifecycle lock wait timeout',
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          providers.observability.log('warn', 'call lifecycle lock wait timed out', {
+            message,
+            waitTimeoutMs,
+          });
+          throw error;
+        }
+      }
+      callLifecycleLockRef.current = true;
+      try {
+        await task();
+      } finally {
+        callLifecycleLockRef.current = false;
+      }
+    },
+    [providers.observability],
   );
 
   const ensureAndroidDialogPrepared = useCallback(async () => {
@@ -1317,15 +1363,15 @@ export function useTextChat(): UseTextChatResult {
           if (!wasSpeaking) {
             androidDialogInterruptedRef.current = false;
           }
-          if (replyChainMode === 'custom_llm' && wasSpeaking && !androidDialogInterruptedRef.current) {
-            armAndroidClientTriggeredTtsInBackground('asr_start');
-            return;
-          }
           setLiveUserTranscript('');
           setPendingAssistantReply('');
           androidAssistantDraftRef.current = '';
           if (!androidDialogConversationIdRef.current && activeConversationId) {
             androidDialogConversationIdRef.current = activeConversationId;
+          }
+          if (replyChainMode === 'custom_llm' && wasSpeaking && !androidDialogInterruptedRef.current) {
+            armAndroidClientTriggeredTtsInBackground('asr_start');
+            break;
           }
           if (replyChainMode === 'custom_llm') {
             armAndroidClientTriggeredTtsInBackground('asr_start');
@@ -1726,18 +1772,20 @@ export function useTextChat(): UseTextChatResult {
       providers.observability.log('info', 'send text query', { content });
       try {
         if (useAndroidDialogTextRuntime) {
-          setLiveUserTranscript('');
-          setPendingAssistantReply('');
-          await repo.appendMessage(activeConversationId, {
-            conversationId: activeConversationId,
-            role: 'user',
-            content,
-            type: 'text',
-          });
-          await syncConversationState();
-          await ensureAndroidDialogConversation('text', { forceRestart: true });
-          await updateConversationRuntimeStatus('thinking', { refreshConversations: true });
-          await providers.dialogEngine.sendTextQuery(content);
+          await withCallLifecycleLock(async () => {
+            setLiveUserTranscript('');
+            setPendingAssistantReply('');
+            await repo.appendMessage(activeConversationId, {
+              conversationId: activeConversationId,
+              role: 'user',
+              content,
+              type: 'text',
+            });
+            await syncConversationState();
+            await ensureAndroidDialogConversation('text', { forceRestart: true });
+            await updateConversationRuntimeStatus('thinking', { refreshConversations: true });
+            await providers.dialogEngine.sendTextQuery(content);
+          }, { waitIfLocked: true });
           shouldFinalizeImmediately = false;
           return;
         }
@@ -1778,6 +1826,7 @@ export function useTextChat(): UseTextChatResult {
       runTextRound,
       syncConversationState,
       stopAndroidDialogConversation,
+      withCallLifecycleLock,
       useAndroidDialogTextRuntime,
       useAndroidDialogRuntime,
       updateConversationRuntimeStatus,
@@ -2164,18 +2213,6 @@ export function useTextChat(): UseTextChatResult {
     updateRealtimeCallPhase,
     updateRealtimeListeningState,
   ]);
-
-  const withCallLifecycleLock = useCallback(async (task: () => Promise<void>) => {
-    if (callLifecycleLockRef.current) {
-      return;
-    }
-    callLifecycleLockRef.current = true;
-    try {
-      await task();
-    } finally {
-      callLifecycleLockRef.current = false;
-    }
-  }, []);
 
   const startRealtimeDemoCall = useCallback(async () => {
     if (!activeConversationId) {

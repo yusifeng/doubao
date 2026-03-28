@@ -187,6 +187,53 @@ describe('useTextChat android dialog sdk flow', () => {
     expect(mockDialogStopConversation).toHaveBeenCalledTimes(1);
   });
 
+  it('waits for in-flight voice lifecycle before running android text rounds', async () => {
+    let resolveStartConversation: (() => void) | null = null;
+    mockDialogStartConversation.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStartConversation = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    let startVoicePromise: Promise<void> | null = null;
+    await act(async () => {
+      startVoicePromise = result.current.toggleVoice();
+      await Promise.resolve();
+    });
+
+    let sendTextPromise: Promise<void> | null = null;
+    await act(async () => {
+      sendTextPromise = result.current.sendText('并发文本轮');
+      await Promise.resolve();
+    });
+
+    expect(mockDialogStartConversation).toHaveBeenCalledTimes(1);
+    expect(mockDialogSendTextQuery).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveStartConversation?.();
+      if (startVoicePromise) {
+        await startVoicePromise;
+      }
+      if (sendTextPromise) {
+        await sendTextPromise;
+      }
+    });
+
+    expect(mockDialogStartConversation).toHaveBeenCalledTimes(2);
+    expect(mockDialogSendTextQuery).toHaveBeenCalledWith('并发文本轮');
+    expect(
+      result.current.messages.some((message) => message.role === 'user' && message.content === '并发文本轮'),
+    ).toBe(true);
+  });
+
   it('maps sdk asr events into realtime transcript and final user message', async () => {
     const { result } = renderHook(() => useTextChat());
 

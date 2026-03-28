@@ -13,6 +13,7 @@ const mockDialogStopConversation = jest.fn<Promise<void>, []>();
 const mockDialogUseClientTriggeredTts = jest.fn<Promise<void>, []>();
 const mockDialogUseServerTriggeredTts = jest.fn<Promise<void>, []>();
 const mockDialogStreamClientTts = jest.fn<Promise<void>, [{ start: boolean; content: string; end: boolean }]>();
+const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
 const mockDialogSetListener = jest.fn<
   void,
   [((event: { type: string; text?: string; sessionId?: string }) => void) | null]
@@ -90,7 +91,7 @@ jest.mock('../providers', () => ({
       pauseTalking: jest.fn(),
       resumeTalking: jest.fn(),
       interruptCurrentDialog: jest.fn(),
-      sendTextQuery: jest.fn(),
+      sendTextQuery: mockDialogSendTextQuery,
       useClientTriggeredTts: mockDialogUseClientTriggeredTts,
       useServerTriggeredTts: mockDialogUseServerTriggeredTts,
       streamClientTtsText: mockDialogStreamClientTts,
@@ -158,6 +159,7 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     mockDialogUseClientTriggeredTts.mockResolvedValue();
     mockDialogUseServerTriggeredTts.mockResolvedValue();
     mockDialogStreamClientTts.mockResolvedValue();
+    mockDialogSendTextQuery.mockResolvedValue();
     mockAudioWaitForRecognitionResult
       .mockResolvedValueOnce('你好')
       .mockImplementation(() => new Promise<string | null>(() => {}));
@@ -293,6 +295,53 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     expect(mockDialogUseClientTriggeredTts.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('clears assistant draft on asr_start while custom round is speaking', async () => {
+    let releaseFirstRound: (() => void) | null = null;
+    const firstRoundBlocked = new Promise<void>((resolve) => {
+      releaseFirstRound = resolve;
+    });
+
+    mockReplyGenerateReplyStream.mockImplementationOnce(async function* firstRound() {
+      yield '第一轮进行中回复';
+      await firstRoundBlocked;
+      yield '第一轮后半句';
+    });
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-speaking-reset' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-speaking-reset' });
+      mockDialogListener?.({ type: 'asr_final', text: '第一轮问题', sessionId: 'voice-custom-speaking-reset' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toContain('第一轮进行中回复');
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-speaking-reset' });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toBe('');
+      expect(result.current.liveUserTranscript).toBe('');
+    });
+
+    await act(async () => {
+      releaseFirstRound?.();
+      await Promise.resolve();
+    });
+  });
+
   it('persists partial assistant text when a newer voice turn preempts the current round', async () => {
     let releaseFirstRound: (() => void) | null = null;
     const firstRoundBlocked = new Promise<void>((resolve) => {
@@ -422,6 +471,30 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     });
 
     expect(mockDialogStreamClientTts).toHaveBeenCalled();
+    expect(mockAudioSpeak).not.toHaveBeenCalled();
+  });
+
+  it('routes custom_llm text rounds through ReplyProvider instead of dialog sendTextQuery', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('自定义文本提问');
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
+        ),
+      ).toBe(true);
+    });
+
+    expect(mockDialogSendTextQuery).not.toHaveBeenCalled();
+    expect(mockDialogStartConversation).not.toHaveBeenCalled();
     expect(mockAudioSpeak).not.toHaveBeenCalled();
   });
 

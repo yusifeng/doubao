@@ -123,6 +123,14 @@
 - 2026-03-29：
   - 已完成 Phase 0 的基线文档初始化（事件/指令基线、已知不确定点、不变量）。
   - 待进入下一步：真机事件时序采样与 orchestrator 拆分设计。
+- 2026-03-29（loop-1 / P0）：
+  - 已完成 `sendText` 生命周期串行化：文本轮会等待 voice 启停中的 lifecycle lock，避免并发竞态。
+  - 已完成 `asr_start` speaking 分支修复：custom 场景下 early-return 前先完成 turn 级草稿清理与 conversation 绑定。
+  - 已补回归测试：
+    - `useTextChat.android.test.tsx` 新增 in-flight voice -> sendText 并发保护用例。
+    - `useTextChat.customVoiceS2S.test.tsx` 新增 speaking 阶段 `asr_start` 草稿清理用例。
+    - `useTextChat.customVoiceS2S.test.tsx` 新增 `custom_llm + chat` 不走 `sendTextQuery` 用例。
+  - 验证结果：`useTextChat.android.test.tsx` + `useTextChat.customVoiceS2S.test.tsx` 全绿。
 
 ## 融合 TODO（基于 `plans/codex.md` + `plans/opus.md` + 当前代码快照）
 
@@ -134,18 +142,18 @@
 
 ### Week 1：P0 稳态修复（先止血）
 
-- [ ] `sendText` 纳入统一 lifecycle lock，避免与 `toggleVoice` 并发竞态。
+- [x] `sendText` 纳入统一 lifecycle lock，避免与 `toggleVoice` 并发竞态。
   - 文件：`src/features/voice-assistant/runtime/useTextChat.ts`
   - 验收：新增 `voice -> sendText -> voice` 快切测试，不再出现 `Dialog engine is not prepared`。
-- [ ] 修复 `asr_start` 在 speaking 场景下的 early-return 副作用。
+- [x] 修复 `asr_start` 在 speaking 场景下的 early-return 副作用。
   - 文件：`src/features/voice-assistant/runtime/useTextChat.ts`
   - 约束：即使 early-return，也必须完成本轮必要的 conversation 绑定与草稿重置。
   - 验收：`custom_llm + voice` 第二轮触发时，assistant draft 不串轮，conversation 归属正确。
-- [ ] 冻结 `custom_llm + voice` 第二轮播报回归用例。
+- [x] 冻结 `custom_llm + voice` 第二轮播报回归用例。
   - 文件：`src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
   - 验收：第二轮既有文本落库，也有 S2S 播报（非本地兜底）。
-- [ ] 补齐 `custom_llm + chat` 独立回归用例。
-  - 文件：`src/features/voice-assistant/runtime/__tests__/useTextChat.customText.test.tsx`（新建）
+- [x] 补齐 `custom_llm + chat` 独立回归用例。
+  - 文件：`src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`（本轮先并入，后续可拆分为独立文件）
   - 验收：确认不走 Android Dialog `sendTextQuery`，仅走 ReplyProvider。
 
 ### Week 1-2：Phase 0 契约固化（重构前门槛）
