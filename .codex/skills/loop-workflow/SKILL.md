@@ -49,7 +49,14 @@ It is tailored for current project constraints:
    - Full tests only when needed: `pnpm run test --runInBand`
    - Do not run coverage by default (`pnpm run test:coverage` only when explicitly requested).
 
-7. Voice-path verification (risk-based, not every commit)
+7. Run codex review (quality gate, before pre-commit)
+   - Run after targeted verification, before staging/commit.
+   - Use repo-standard profile from `AGENTS.md`:
+     - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"`
+   - Tool-call timeout must be at least `1200000` ms.
+   - For docs-only commits, review may be skipped unless explicitly requested.
+
+8. Voice-path verification (risk-based, not every commit)
    - Fast path (default, most commits):
      - Run `pnpm exec tsc --noEmit`
      - Run targeted tests only
@@ -64,12 +71,12 @@ It is tailored for current project constraints:
        - `adb logcat -d | rg "voice-assistant|s2s|live_pcm|StartConnection|StartSession|audio"`
    - Heavy path is **not** required for every commit.
 
-8. Pre-commit gate (mandatory)
+9. Pre-commit gate (mandatory)
    - Check staged scope: `git status --short`
    - Ensure docs sync is done for behavior/architecture changes.
    - **Update `docs/commit-history.md` before every commit** (required by `AGENTS.md`).
 
-9. Commit
+10. Commit
    - One concern per commit.
    - Keep commit small and reviewable.
 
@@ -99,6 +106,9 @@ CI=0 pnpm run android:run
 # Tests
 pnpm run test -- <file-or-pattern>
 pnpm run test --runInBand
+
+# Code review gate (required for code changes)
+codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"
 
 # Focused Android logs
 adb logcat -d | rg "voice-assistant|ReactNativeJS|s2s|audio|Exception|Error"

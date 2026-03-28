@@ -560,3 +560,22 @@
   - `asr_start` cleanup now happens in more speaking scenarios; if SDK emits noisy `asr_start` events, UI drafts may clear earlier than expected.
 - Rollback:
   - Revert `useTextChat.ts` lock/`asr_start` adjustments and the two runtime test additions to restore previous behavior.
+
+## 2026-03-29 03:19 (Asia/Shanghai) - loop-workflow-add-codex-review-gate
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `.codex/skills/loop-workflow/SKILL.md`
+  - `docs/commit-history.md`
+- Summary:
+  - Added an explicit `codex review` quality-gate step to the default loop workflow and positioned it between targeted verification and pre-commit.
+  - Standardized the review command to repository policy: `codex review --uncommitted -c model=\"gpt-5.3-codex\" -c model_reasoning_effort=\"medium\"`.
+  - Recorded timeout guidance (`>= 1200000 ms`) and clarified docs-only commit skip behavior.
+  - Updated the quick command reference so contributors can run the review gate consistently.
+- Tests:
+  - Docs/process update only; no runtime code path changed.
+- Risk:
+  - If contributors treat this as optional, process drift can still happen; enforcement remains team discipline plus code review culture.
+- Rollback:
+  - Revert `.codex/skills/loop-workflow/SKILL.md` changes to remove the added review gate step.
