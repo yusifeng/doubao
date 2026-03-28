@@ -1,6 +1,28 @@
 describe('createVoiceAssistantProviders platform routing', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalWebSocket = global.WebSocket;
+  const runtimeConfig = {
+    replyChainMode: 'official_s2s' as const,
+    llm: {
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      provider: 'openai-compatible',
+    },
+    s2s: {
+      appId: '7948119309',
+      accessToken: 'test-access-token',
+      wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+    },
+    androidDialog: {
+      appKeyOverride: 'test-app-key',
+    },
+    voice: {
+      speakerId: 'S_mXRP7Y5M1',
+      speakerLabel: '默认音色',
+      sourceType: 'default' as const,
+    },
+  };
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
@@ -12,17 +34,6 @@ describe('createVoiceAssistantProviders platform routing', () => {
   it('falls back to JS providers when Android dialog native module is unavailable', () => {
     process.env.NODE_ENV = 'development';
     global.WebSocket = function MockWebSocket() {} as unknown as typeof WebSocket;
-
-    jest.doMock('../../config/env', () => ({
-      readS2SEnv: () => ({
-        appId: '7948119309',
-        appKey: 'test-app-key',
-        accessToken: 'test-access-token',
-        wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
-      }),
-      readLLMEnv: () => null,
-      readReplyChainMode: () => 'official_s2s',
-    }));
     jest.doMock('../../../../core/providers/audio/expoRealtime', () => ({
       ExpoRealtimeAudioProvider: class ExpoRealtimeAudioProvider {},
     }));
@@ -36,7 +47,7 @@ describe('createVoiceAssistantProviders platform routing', () => {
       delete reactNative.NativeModules.RNDialogEngine;
 
       const { createVoiceAssistantProviders } = require('../providers');
-      const providers = createVoiceAssistantProviders();
+      const providers = createVoiceAssistantProviders(runtimeConfig);
 
       expect(providers.dialogEngine.isSupported()).toBe(false);
       expect(providers.s2s.constructor.name).toBe('WebSocketS2SProvider');
@@ -47,17 +58,6 @@ describe('createVoiceAssistantProviders platform routing', () => {
   it('uses Android dialog provider when native module is available', () => {
     process.env.NODE_ENV = 'development';
     global.WebSocket = function MockWebSocket() {} as unknown as typeof WebSocket;
-
-    jest.doMock('../../config/env', () => ({
-      readS2SEnv: () => ({
-        appId: '7948119309',
-        appKey: 'test-app-key',
-        accessToken: 'test-access-token',
-        wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
-      }),
-      readLLMEnv: () => null,
-      readReplyChainMode: () => 'official_s2s',
-    }));
 
     jest.isolateModules(() => {
       const reactNative = require('react-native');
@@ -81,7 +81,7 @@ describe('createVoiceAssistantProviders platform routing', () => {
       };
 
       const { createVoiceAssistantProviders } = require('../providers');
-      const providers = createVoiceAssistantProviders();
+      const providers = createVoiceAssistantProviders(runtimeConfig);
 
       expect(providers.dialogEngine.isSupported()).toBe(true);
       expect(providers.s2s.constructor.name).toBe('MockS2SProvider');

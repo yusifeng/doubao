@@ -14,6 +14,7 @@ type VoiceAssistantSessionDrawerContentProps = {
   onSelectConversation: (conversationId: string) => Promise<void> | void;
   onCreateConversation: () => Promise<void> | void;
   onOpenVoice: () => Promise<void> | void;
+  onOpenSettings: () => Promise<void> | void;
 };
 
 function formatConversationTime(updatedAt: number): string {
@@ -86,6 +87,7 @@ export function VoiceAssistantSessionDrawerContent({
   onSelectConversation,
   onCreateConversation,
   onOpenVoice,
+  onOpenSettings,
 }: VoiceAssistantSessionDrawerContentProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -193,13 +195,22 @@ export function VoiceAssistantSessionDrawerContent({
         </ScrollView>
 
         <View className={voiceAssistantConversationThemeClass.drawerFooter}>
-          <TouchableOpacity
-            className={voiceAssistantConversationThemeClass.drawerFooterButton}
-            onPress={session.testS2SConnection}
-            testID="conversation-drawer-s2s-test-button"
-          >
-            <Text className={voiceAssistantConversationThemeClass.drawerFooterButtonText}>连接测试</Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center justify-between">
+            <TouchableOpacity
+              className={voiceAssistantConversationThemeClass.drawerFooterButton}
+              onPress={() => void session.testS2SConnection()}
+              testID="conversation-drawer-s2s-test-button"
+            >
+              <Text className={voiceAssistantConversationThemeClass.drawerFooterButtonText}>连接测试</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+              onPress={() => void onOpenSettings()}
+              testID="conversation-drawer-open-settings-button"
+            >
+              <VoiceAssistantIcon name="settings" size={20} color="#475569" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </SafeAreaView>

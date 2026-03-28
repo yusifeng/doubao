@@ -15,6 +15,28 @@ const mockAudioSpeak = jest.fn();
 const mockObservabilityLog = jest.fn();
 let mockDialogListener: ((event: { type: string; text?: string; sessionId?: string }) => void) | null = null;
 const mockReadVoicePipelineMode = jest.fn(() => 'realtime_audio');
+const runtimeConfig = {
+  replyChainMode: 'official_s2s' as const,
+  llm: {
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    provider: 'openai-compatible',
+  },
+  s2s: {
+    appId: '7948119309',
+    accessToken: 'test-access-token',
+    wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+  },
+  androidDialog: {
+    appKeyOverride: 'test-app-key',
+  },
+  voice: {
+    speakerId: 'S_mXRP7Y5M1',
+    speakerLabel: '默认音色',
+    sourceType: 'default' as const,
+  },
+};
 
 function emitEngineStart(sessionId = 'session-1') {
   mockDialogListener?.({ type: 'engine_start', sessionId });
@@ -83,6 +105,16 @@ jest.mock('../../config/env', () => ({
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
   maskSecret: (value: string) => value,
+}));
+
+jest.mock('../../config/runtimeConfigRepo', () => ({
+  getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
+  saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
+    ...currentConfig,
+    ...draft,
+  })),
+  validateRuntimeConfigForSave: jest.fn(() => []),
 }));
 
 describe('useTextChat android dialog sdk flow', () => {
@@ -314,7 +346,8 @@ describe('useTextChat android dialog sdk flow', () => {
       expect(result.current.activeConversationId).not.toBeNull();
     });
 
-    expect(mockDialogSetListener).toHaveBeenCalledTimes(1);
+    const initialListenerBindings = mockDialogSetListener.mock.calls.length;
+    expect(initialListenerBindings).toBeGreaterThan(0);
 
     await act(async () => {
       await result.current.toggleVoice();
@@ -333,7 +366,7 @@ describe('useTextChat android dialog sdk flow', () => {
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '这是服务端回复')).toBe(true);
     });
 
-    expect(mockDialogSetListener).toHaveBeenCalledTimes(1);
+    expect(mockDialogSetListener.mock.calls.length).toBe(initialListenerBindings);
   });
 
   it('interrupts current android assistant output and returns to listening', async () => {

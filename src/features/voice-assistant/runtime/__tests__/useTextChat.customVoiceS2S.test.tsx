@@ -19,6 +19,28 @@ const mockDialogSetListener = jest.fn<
 >();
 const mockReplyGenerateReplyStream = jest.fn();
 let mockDialogListener: ((event: { type: string; text?: string; sessionId?: string }) => void) | null = null;
+const runtimeConfig = {
+  replyChainMode: 'custom_llm' as const,
+  llm: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'test-api-key',
+    model: 'deepseek-chat',
+    provider: 'deepseek',
+  },
+  s2s: {
+    appId: '7948119309',
+    accessToken: 'test-access-token',
+    wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+  },
+  androidDialog: {
+    appKeyOverride: 'test-app-key',
+  },
+  voice: {
+    speakerId: 'S_mXRP7Y5M1',
+    speakerLabel: '默认音色',
+    sourceType: 'default' as const,
+  },
+};
 
 jest.mock('../providers', () => ({
   createVoiceAssistantProviders: () => ({
@@ -89,6 +111,16 @@ jest.mock('../../config/env', () => ({
   }),
   readReplyChainMode: () => 'custom_llm',
   maskSecret: (value: string) => value,
+}));
+
+jest.mock('../../config/runtimeConfigRepo', () => ({
+  getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
+  saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
+    ...currentConfig,
+    ...draft,
+  })),
+  validateRuntimeConfigForSave: jest.fn(() => []),
 }));
 
 describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {

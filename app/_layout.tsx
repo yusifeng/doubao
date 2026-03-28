@@ -14,6 +14,7 @@ import {
   VoiceAssistantRuntimeProvider,
 } from '../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 import { VoiceAssistantSessionDrawerContent } from '../src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent';
+import { AppToastProvider } from '../src/shared/ui/AppToastProvider';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -67,6 +68,10 @@ function RootDrawerNavigator() {
     });
   }
 
+  async function handleOpenSettings() {
+    router.push('/settings');
+  }
+
   return (
     <Drawer
       drawerContent={(props) => (
@@ -83,6 +88,10 @@ function RootDrawerNavigator() {
           }}
           onOpenVoice={async () => {
             await handleOpenVoice();
+            props.navigation.closeDrawer();
+          }}
+          onOpenSettings={async () => {
+            await handleOpenSettings();
             props.navigation.closeDrawer();
           }}
         />
@@ -102,6 +111,7 @@ function RootDrawerNavigator() {
       <Drawer.Screen name="index" />
       <Drawer.Screen name="conversation/[conversationId]" />
       <Drawer.Screen name="voice/[conversationId]" />
+      <Drawer.Screen name="settings" />
     </Drawer>
   );
 }
@@ -120,10 +130,12 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <VoiceAssistantRuntimeProvider>
-          <RootDrawerNavigator />
-          <StatusBar style="dark" />
-        </VoiceAssistantRuntimeProvider>
+        <AppToastProvider>
+          <VoiceAssistantRuntimeProvider>
+            <RootDrawerNavigator />
+            <StatusBar style="dark" />
+          </VoiceAssistantRuntimeProvider>
+        </AppToastProvider>
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

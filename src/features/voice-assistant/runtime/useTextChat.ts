@@ -4,14 +4,30 @@ import type { Conversation, Message } from '../types/model';
 import { InMemoryConversationRepo } from '../repo/conversationRepo';
 import { buildAssistantReply } from '../service/useCases';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
-import { maskSecret, readLLMEnv, readReplyChainMode, readS2SEnv, readVoicePipelineMode } from '../config/env';
+import { maskSecret, readVoicePipelineMode } from '../config/env';
+import {
+  buildRuntimeConfigForSave,
+  getEffectiveRuntimeConfig,
+  saveRuntimeConfig as persistRuntimeConfig,
+  validateRuntimeConfigForSave,
+} from '../config/runtimeConfigRepo';
+import {
+  isCompleteLLMConfig,
+  isCompleteS2SConfig,
+  isRuntimeConfigEqual,
+  readRuntimeConfigFromEnv,
+  type RuntimeConfig,
+  type RuntimeConfigDraft,
+  type RuntimeLLMConfig,
+  type RuntimeS2SConfig,
+} from '../config/runtimeConfig';
 import { createVoiceAssistantProviders } from './providers';
 import { useSessionMachine } from './sessionMachine';
 import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
+import { OpenAICompatibleReplyProvider } from '../../../core/providers/reply/openaiCompatible';
 import {
   VOICE_ASSISTANT_DIALOG_BOT_NAME,
   VOICE_ASSISTANT_DIALOG_MODEL,
-  VOICE_ASSISTANT_DIALOG_SPEAKER,
 } from '../config/constants';
 import type {
   DialogConversationInputMode,
@@ -40,7 +56,10 @@ export type UseTextChatResult = {
   voiceToggleLabel: string;
   voiceRuntimeHint: string;
   connectivityHint: string;
-  testS2SConnection: () => Promise<void>;
+  runtimeConfig: RuntimeConfig;
+  saveRuntimeConfig: (draft: RuntimeConfigDraft) => Promise<{ ok: boolean; message: string }>;
+  testLLMConfig: (input?: Partial<RuntimeLLMConfig>) => Promise<{ ok: boolean; message: string }>;
+  testS2SConnection: (input?: Partial<RuntimeS2SConfig>) => Promise<{ ok: boolean; message: string }>;
 };
 
 type RealtimeCallPhase = 'idle' | 'starting' | 'listening' | 'speaking' | 'stopping';
@@ -83,6 +102,23 @@ const VOICE_RUNTIME_CONFIG = {
   realtimeEndpointAssistSilenceFrames: 9,
   realtimeEndpointAssistMuteMs: 1250,
 } as const;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
 
 function analyzePcm16Energy(frame: Uint8Array): { peak: number; rms: number } {
   if (frame.length < 2) {
@@ -156,12 +192,13 @@ function mergeAssistantDraft(currentDraft: string, incomingText: string): string
 export function useTextChat(): UseTextChatResult {
   const isTestEnv = process.env.NODE_ENV === 'test';
   const repo = useMemo(() => new InMemoryConversationRepo(), []);
-  const providers = useMemo(() => createVoiceAssistantProviders(), []);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(() => readRuntimeConfigFromEnv());
+  const providers = useMemo(() => createVoiceAssistantProviders(runtimeConfig), [runtimeConfig]);
   const machine = useSessionMachine();
   const isAndroidDialogMode = Platform.OS === 'android' && providers.dialogEngine.isSupported();
-  const replyChainMode = useMemo(() => readReplyChainMode(), []);
-  const llmEnv = useMemo(() => readLLMEnv(), []);
-  const useCustomReplyProvider = replyChainMode === 'custom_llm' && Boolean(llmEnv);
+  const replyChainMode = runtimeConfig.replyChainMode;
+  const llmConfig = runtimeConfig.llm;
+  const useCustomReplyProvider = replyChainMode === 'custom_llm' && isCompleteLLMConfig(llmConfig);
   const useAndroidDialogRuntime =
     isAndroidDialogMode && (replyChainMode === 'official_s2s' || useCustomReplyProvider);
   const useAndroidDialogTextRuntime = isAndroidDialogMode && replyChainMode === 'official_s2s';
@@ -183,7 +220,7 @@ export function useTextChat(): UseTextChatResult {
   const textReplySourceLabel = useAndroidDialogTextRuntime
     ? '文本回复来源：官方S2S（Dialog SDK）'
     : useCustomReplyProvider
-    ? `文本回复来源：自定义LLM（${llmEnv?.provider ?? 'openai-compatible'} / ${llmEnv?.model ?? 'unknown'}）`
+    ? `文本回复来源：自定义LLM（${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}）`
     : '文本回复来源：本地Fallback';
   const voiceLoopActiveRef = useRef(false);
   const voiceLoopRunningRef = useRef(false);
@@ -230,6 +267,21 @@ export function useTextChat(): UseTextChatResult {
 
   useEffect(() => {
     let mounted = true;
+    void (async () => {
+      const nextRuntimeConfig = await getEffectiveRuntimeConfig();
+      if (mounted) {
+        setRuntimeConfig((current) =>
+          isRuntimeConfigEqual(current, nextRuntimeConfig) ? current : nextRuntimeConfig,
+        );
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
     async function bootstrap() {
       const conversation = await repo.createConversation('默认会话');
       const allConversations = await repo.listConversations();
@@ -248,11 +300,11 @@ export function useTextChat(): UseTextChatResult {
   }, [repo]);
 
   useEffect(() => {
-    if (replyChainMode !== 'custom_llm' || llmEnv) {
+    if (replyChainMode !== 'custom_llm' || isCompleteLLMConfig(llmConfig)) {
       return;
     }
-    setConnectivityHint('当前为 custom_llm 模式，但缺少 EXPO_PUBLIC_LLM_* 配置，已回退默认回复。');
-  }, [llmEnv, replyChainMode]);
+    setConnectivityHint('当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置，已回退默认回复。');
+  }, [llmConfig, replyChainMode]);
 
   const syncConversationState = useCallback(async () => {
     if (!activeConversationId) {
@@ -527,7 +579,7 @@ export function useTextChat(): UseTextChatResult {
       await providers.dialogEngine.startConversation({
         inputMode,
         model: VOICE_ASSISTANT_DIALOG_MODEL,
-        speaker: VOICE_ASSISTANT_DIALOG_SPEAKER,
+        speaker: runtimeConfig.voice.speakerId,
         characterManifest: KONAN_CHARACTER_MANIFEST,
         botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
       });
@@ -552,6 +604,7 @@ export function useTextChat(): UseTextChatResult {
       providers.dialogEngine,
       persistPendingAndroidAssistantDraft,
       rememberRetiredAndroidDialogSession,
+      runtimeConfig.voice.speakerId,
     ],
   );
 
@@ -797,13 +850,13 @@ export function useTextChat(): UseTextChatResult {
           setPendingAssistantReply(assistantText);
           if (!started) {
             providers.observability.log('info', 'custom llm voice round started', {
-              provider: llmEnv?.provider ?? 'openai-compatible',
-              model: llmEnv?.model ?? 'unknown',
+              provider: llmConfig.provider || 'openai-compatible',
+              model: llmConfig.model || 'unknown',
               streamToS2SVoice: canStreamViaClientTts,
             });
             if (canStreamViaClientTts) {
               setConnectivityHint(
-                `语音回复来源：自定义LLM（${llmEnv?.provider ?? 'openai-compatible'} / ${llmEnv?.model ?? 'unknown'}）`,
+                `语音回复来源：自定义LLM（${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}）`,
               );
             }
           }
@@ -915,7 +968,7 @@ export function useTextChat(): UseTextChatResult {
       conversations,
       useAndroidDialogRuntime,
       replyChainMode,
-      llmEnv,
+      llmConfig,
       providers.dialogEngine,
       providers.observability,
       providers.reply,
@@ -1473,7 +1526,9 @@ export function useTextChat(): UseTextChatResult {
         })
       ) || sanitizeAssistantText(buildAssistantReply(clean));
       if (useCustomReplyProvider) {
-        setConnectivityHint(`回复来源：自定义LLM（${llmEnv?.provider ?? 'openai-compatible'} / ${llmEnv?.model ?? 'unknown'}）`);
+        setConnectivityHint(
+          `回复来源：自定义LLM（${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}）`,
+        );
       }
       await repo.appendMessage(activeConversationId, {
         conversationId: activeConversationId,
@@ -1491,7 +1546,7 @@ export function useTextChat(): UseTextChatResult {
             await providers.dialogEngine.startConversation({
               inputMode: 'text',
               model: VOICE_ASSISTANT_DIALOG_MODEL,
-              speaker: VOICE_ASSISTANT_DIALOG_SPEAKER,
+              speaker: runtimeConfig.voice.speakerId,
               characterManifest: KONAN_CHARACTER_MANIFEST,
               botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
             });
@@ -1525,7 +1580,7 @@ export function useTextChat(): UseTextChatResult {
       activeConversationId,
       generateAssistantReplyFromProvider,
       providers.dialogEngine,
-      llmEnv,
+      llmConfig,
       providers.audio,
       providers.observability,
       repo,
@@ -1533,6 +1588,7 @@ export function useTextChat(): UseTextChatResult {
       useCustomReplyProvider,
       useCustomVoiceS2STts,
       updateConversationRuntimeStatus,
+      runtimeConfig.voice.speakerId,
     ],
   );
 
@@ -2271,41 +2327,123 @@ export function useTextChat(): UseTextChatResult {
     effectiveVoicePipelineMode,
   ]);
 
-  const testS2SConnection = useCallback(async () => {
-    const env = readS2SEnv();
-    if (!env) {
-      setConnectivityHint('缺少 EXPO_PUBLIC_S2S_APP_ID / EXPO_PUBLIC_S2S_ACCESS_TOKEN / EXPO_PUBLIC_S2S_WS_URL');
-      return;
-    }
-    try {
-      if (useAndroidDialogTextRuntime) {
-        await ensureAndroidDialogPrepared();
-        await ensureAndroidDialogConversation('text', { forceRestart: true });
-        await stopAndroidDialogConversation();
-        setConnectivityHint(`Android Dialog SDK 可用，app=${env.appId} token=${maskSecret(env.accessToken)}`);
-        return;
+  const saveRuntimeConfig = useCallback(
+    async (draft: RuntimeConfigDraft) => {
+      const validationErrors = validateRuntimeConfigForSave(runtimeConfig, draft);
+      if (validationErrors.length > 0) {
+        const message = validationErrors[0] ?? '配置校验失败';
+        setConnectivityHint(message);
+        return { ok: false, message };
       }
-      await providers.s2s.connect();
-      if (!s2sSessionReady) {
-        await providers.s2s.startSession();
-        setS2SSessionReady(true);
+      const nextConfig = buildRuntimeConfigForSave(runtimeConfig, draft);
+      await persistRuntimeConfig(nextConfig);
+      setRuntimeConfig(nextConfig);
+      const message = isVoiceActive
+        ? '配置已保存。当前语音通话请先挂断后重连生效。'
+        : '配置已保存，后续请求将使用新配置。';
+      setConnectivityHint(message);
+      return { ok: true, message };
+    },
+    [isVoiceActive, runtimeConfig],
+  );
+
+  const testLLMConfig = useCallback(
+    async (input?: Partial<RuntimeLLMConfig>) => {
+      const llmConfigToTest: RuntimeLLMConfig = {
+        ...runtimeConfig.llm,
+        ...input,
+        provider: (input?.provider ?? runtimeConfig.llm.provider ?? 'openai-compatible').trim() || 'openai-compatible',
+      };
+      if (!isCompleteLLMConfig(llmConfigToTest)) {
+        const message = '请先补全 Base URL / API Key / Model。';
+        setConnectivityHint(message);
+        return { ok: false, message };
       }
-      await providers.s2s.disconnect();
-      setS2SSessionReady(false);
-      setConnectivityHint(`连接成功，app=${env.appId} token=${maskSecret(env.accessToken)}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      setConnectivityHint(`连接失败：${message}`);
-    }
-  }, [
-    ensureAndroidDialogConversation,
-    ensureAndroidDialogPrepared,
-    useAndroidDialogTextRuntime,
-    useAndroidDialogRuntime,
-    providers.s2s,
-    s2sSessionReady,
-    stopAndroidDialogConversation,
-  ]);
+      try {
+        const provider = new OpenAICompatibleReplyProvider(llmConfigToTest);
+        await withTimeout(
+          (async () => {
+            let generated = '';
+            for await (const chunk of provider.generateReplyStream({
+              userText: 'ping',
+              mode: 'text',
+              conversation: null,
+              messages: [],
+            })) {
+              generated += chunk;
+              if (generated.trim().length > 0) {
+                break;
+              }
+            }
+          })(),
+          12000,
+          '请求超时（12s）',
+        );
+        const message = `LLM 连接成功（${llmConfigToTest.provider || 'openai-compatible'} / ${llmConfigToTest.model}）`;
+        setConnectivityHint(message);
+        return { ok: true, message };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        const message = `LLM 连接失败：${reason}`;
+        setConnectivityHint(message);
+        return { ok: false, message };
+      }
+    },
+    [runtimeConfig.llm],
+  );
+
+  const testS2SConnection = useCallback(
+    async (input?: Partial<RuntimeS2SConfig>) => {
+      const s2sConfigToTest: RuntimeS2SConfig = {
+        ...runtimeConfig.s2s,
+        ...input,
+      };
+      if (!isCompleteS2SConfig(s2sConfigToTest)) {
+        const message = '缺少 App ID / Access Token / WS URL';
+        setConnectivityHint(message);
+        return { ok: false, message };
+      }
+      const configToTest = buildRuntimeConfigForSave(runtimeConfig, { s2s: s2sConfigToTest });
+      const tempProviders = createVoiceAssistantProviders(configToTest);
+      const tempAndroidDialogSupported = Platform.OS === 'android' && tempProviders.dialogEngine.isSupported();
+      try {
+        if (tempAndroidDialogSupported && configToTest.replyChainMode === 'official_s2s') {
+          await tempProviders.dialogEngine.prepare({
+            dialogWorkMode: 'default',
+          });
+          await tempProviders.dialogEngine.startConversation({
+            inputMode: 'text',
+            model: VOICE_ASSISTANT_DIALOG_MODEL,
+            speaker: configToTest.voice.speakerId,
+            characterManifest: KONAN_CHARACTER_MANIFEST,
+            botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
+          });
+          await tempProviders.dialogEngine.stopConversation();
+          const message = `Android Dialog SDK 可用，app=${s2sConfigToTest.appId} token=${maskSecret(s2sConfigToTest.accessToken)}`;
+          setConnectivityHint(message);
+          return { ok: true, message };
+        }
+
+        await tempProviders.s2s.connect();
+        await tempProviders.s2s.startSession();
+        await tempProviders.s2s.disconnect();
+        const message = `S2S 连接成功，app=${s2sConfigToTest.appId} token=${maskSecret(s2sConfigToTest.accessToken)}`;
+        setConnectivityHint(message);
+        return { ok: true, message };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'unknown error';
+        const message = `S2S 连接失败：${reason}`;
+        setConnectivityHint(message);
+        return { ok: false, message };
+      } finally {
+        if (tempProviders.s2s !== providers.s2s) {
+          await tempProviders.s2s.disconnect().catch(() => undefined);
+        }
+        await tempProviders.dialogEngine.destroy().catch(() => undefined);
+      }
+    },
+    [providers.s2s, runtimeConfig],
+  );
 
   const voiceToggleLabel = useMemo(() => {
     if (useAndroidDialogRuntime) {
@@ -2413,6 +2551,9 @@ export function useTextChat(): UseTextChatResult {
     voiceToggleLabel,
     voiceRuntimeHint,
     connectivityHint,
+    runtimeConfig,
+    saveRuntimeConfig,
+    testLLMConfig,
     testS2SConnection,
   };
 }

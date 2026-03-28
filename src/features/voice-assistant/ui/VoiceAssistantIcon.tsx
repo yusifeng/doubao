@@ -23,7 +23,8 @@ type VoiceAssistantIconName =
   | 'image'
   | 'video'
   | 'close'
-  | 'spark';
+  | 'spark'
+  | 'settings';
 
 type VoiceAssistantIconProps = {
   name: VoiceAssistantIconName;
@@ -210,6 +211,13 @@ export function VoiceAssistantIcon({
           <Path d="M12 4l1.8 4.2L18 10l-4.2 1.8L12 16l-1.8-4.2L6 10l4.2-1.8Z" {...common} />
           <Line x1="18" y1="4" x2="18" y2="7" {...common} />
           <Line x1="19.5" y1="5.5" x2="16.5" y2="5.5" {...common} />
+        </Svg>
+      );
+    case 'settings':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Circle cx="12" cy="12" r="3.2" {...common} />
+          <Path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7.1 7.1 0 0 0-2.1-1.2l-.3-2.5h-4l-.3 2.5a7.1 7.1 0 0 0-2.1 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1c.6.5 1.3.9 2.1 1.2l.3 2.5h4l.3-2.5c.8-.3 1.5-.7 2.1-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2Z" {...common} />
         </Svg>
       );
     default:

@@ -16,6 +16,28 @@ const mockWaitForAssistantAudioChunk = jest.fn<Promise<Uint8Array | null>, [numb
 const mockWaitForAssistantText = jest.fn<Promise<string | null>, [number]>();
 const mockGenerateReplyStream = jest.fn();
 let latestCaptureCallback: ((frame: Uint8Array) => Promise<void> | void) | undefined;
+const runtimeConfig = {
+  replyChainMode: 'official_s2s' as const,
+  llm: {
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    provider: 'openai-compatible',
+  },
+  s2s: {
+    appId: '',
+    accessToken: '',
+    wsUrl: '',
+  },
+  androidDialog: {
+    appKeyOverride: '',
+  },
+  voice: {
+    speakerId: 'S_mXRP7Y5M1',
+    speakerLabel: '默认音色',
+    sourceType: 'default' as const,
+  },
+};
 
 jest.mock('../providers', () => ({
   createVoiceAssistantProviders: () => ({
@@ -73,6 +95,16 @@ jest.mock('../../config/env', () => ({
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
   maskSecret: (value: string) => value,
+}));
+
+jest.mock('../../config/runtimeConfigRepo', () => ({
+  getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
+  saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
+    ...currentConfig,
+    ...draft,
+  })),
+  validateRuntimeConfigForSave: jest.fn(() => []),
 }));
 
 describe('useTextChat realtime lifecycle lock', () => {

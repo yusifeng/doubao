@@ -11,7 +11,7 @@ import type { ReplyProvider } from '../../../core/providers/reply/types';
 import { MockS2SProvider } from '../../../core/providers/s2s/mock';
 import type { S2SProvider } from '../../../core/providers/s2s/types';
 import { WebSocketS2SProvider } from '../../../core/providers/s2s/websocket';
-import { readLLMEnv, readReplyChainMode, readS2SEnv } from '../config/env';
+import { isCompleteLLMConfig, isCompleteS2SConfig, type RuntimeConfig } from '../config/runtimeConfig';
 import { LocalReplyProvider } from '../service/localReplyProvider';
 
 export type VoiceAssistantProviders = {
@@ -22,15 +22,22 @@ export type VoiceAssistantProviders = {
   observability: ObservabilityProvider;
 };
 
-export function createVoiceAssistantProviders(): VoiceAssistantProviders {
-  const env = readS2SEnv();
-  const replyChainMode = readReplyChainMode();
-  const llmEnv = readLLMEnv();
+export function createVoiceAssistantProviders(runtimeConfig: RuntimeConfig): VoiceAssistantProviders {
+  const hasS2SConfig = isCompleteS2SConfig(runtimeConfig.s2s);
+  const replyChainMode = runtimeConfig.replyChainMode;
+  const hasLLMConfig = isCompleteLLMConfig(runtimeConfig.llm);
   const androidDialogCandidate: DialogEngineProvider =
-    Platform.OS === 'android' && env ? new AndroidDialogEngineProvider(env) : new MockDialogEngineProvider();
+    Platform.OS === 'android' && hasS2SConfig
+      ? new AndroidDialogEngineProvider({
+          appId: runtimeConfig.s2s.appId.trim(),
+          appKey: runtimeConfig.androidDialog.appKeyOverride.trim(),
+          accessToken: runtimeConfig.s2s.accessToken.trim(),
+          wsUrl: runtimeConfig.s2s.wsUrl.trim(),
+        })
+      : new MockDialogEngineProvider();
   const hasAndroidDialogCapability =
     Platform.OS === 'android' &&
-    Boolean(env) &&
+    hasS2SConfig &&
     process.env.NODE_ENV !== 'test' &&
     androidDialogCandidate.isSupported();
   const useAndroidDialogRuntime = hasAndroidDialogCapability && replyChainMode === 'official_s2s';
@@ -38,12 +45,18 @@ export function createVoiceAssistantProviders(): VoiceAssistantProviders {
   // without accidentally pulling native implementations into Jest.
   const useRealS2S =
     !useAndroidDialogRuntime &&
-    Boolean(env) &&
+    hasS2SConfig &&
     typeof WebSocket !== 'undefined' &&
     process.env.NODE_ENV !== 'test';
   const useRealAudio =
     process.env.NODE_ENV !== 'test' && (!hasAndroidDialogCapability || replyChainMode !== 'official_s2s');
-  const s2sProvider: S2SProvider = useRealS2S && env ? new WebSocketS2SProvider(env) : new MockS2SProvider();
+  const s2sProvider: S2SProvider = useRealS2S
+    ? new WebSocketS2SProvider({
+        wsUrl: runtimeConfig.s2s.wsUrl.trim(),
+        appId: runtimeConfig.s2s.appId.trim(),
+        accessToken: runtimeConfig.s2s.accessToken.trim(),
+      })
+    : new MockS2SProvider();
   const audioProvider: AudioProvider = useRealAudio
     ? // Lazy import avoids loading native modules in Jest environment.
       new (require('../../../core/providers/audio/expoRealtime').ExpoRealtimeAudioProvider as {
@@ -54,8 +67,8 @@ export function createVoiceAssistantProviders(): VoiceAssistantProviders {
     ? androidDialogCandidate
     : new MockDialogEngineProvider();
   const replyProvider: ReplyProvider =
-    process.env.NODE_ENV !== 'test' && replyChainMode === 'custom_llm' && llmEnv
-      ? new OpenAICompatibleReplyProvider(llmEnv)
+    process.env.NODE_ENV !== 'test' && replyChainMode === 'custom_llm' && hasLLMConfig
+      ? new OpenAICompatibleReplyProvider(runtimeConfig.llm)
       : new LocalReplyProvider();
   return {
     audio: audioProvider,

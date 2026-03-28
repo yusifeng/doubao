@@ -49,7 +49,31 @@ function createSession(): UseTextChatResult {
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
-    testS2SConnection: jest.fn().mockResolvedValue(undefined),
+    runtimeConfig: {
+      replyChainMode: 'custom_llm',
+      llm: {
+        baseUrl: 'https://api.deepseek.com/v1',
+        apiKey: 'sk-test',
+        model: 'deepseek-chat',
+        provider: 'deepseek',
+      },
+      s2s: {
+        appId: 'app-id',
+        accessToken: 'token',
+        wsUrl: 'wss://example.com/realtime/dialogue',
+      },
+      androidDialog: {
+        appKeyOverride: '',
+      },
+      voice: {
+        speakerId: 'S_mXRP7Y5M1',
+        speakerLabel: '默认音色',
+        sourceType: 'default',
+      },
+    },
+    saveRuntimeConfig: jest.fn().mockResolvedValue({ ok: true, message: 'saved' }),
+    testLLMConfig: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
+    testS2SConnection: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
   };
 }
 

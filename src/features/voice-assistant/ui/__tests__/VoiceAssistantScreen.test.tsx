@@ -3,6 +3,34 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantScreen } from '../VoiceAssistantScreen';
 
+jest.mock('../../config/runtimeConfigRepo', () => ({
+  getEffectiveRuntimeConfig: jest.fn(async () => ({
+    replyChainMode: 'official_s2s',
+    llm: {
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      provider: 'openai-compatible',
+    },
+    s2s: {
+      appId: '',
+      accessToken: '',
+      wsUrl: '',
+    },
+    androidDialog: {
+      appKeyOverride: '',
+    },
+    voice: {
+      speakerId: 'S_mXRP7Y5M1',
+      speakerLabel: '江户川柯南（默认音色）',
+      sourceType: 'default',
+    },
+  })),
+  saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({ ...currentConfig, ...draft })),
+  validateRuntimeConfigForSave: jest.fn(() => []),
+}));
+
 function createSession(): UseTextChatResult {
   return {
     status: 'idle',
@@ -33,7 +61,31 @@ function createSession(): UseTextChatResult {
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
-    testS2SConnection: jest.fn().mockResolvedValue(undefined),
+    runtimeConfig: {
+      replyChainMode: 'official_s2s',
+      llm: {
+        baseUrl: '',
+        apiKey: '',
+        model: '',
+        provider: 'openai-compatible',
+      },
+      s2s: {
+        appId: 'app-id',
+        accessToken: 'token',
+        wsUrl: 'wss://example.com/realtime/dialogue',
+      },
+      androidDialog: {
+        appKeyOverride: '',
+      },
+      voice: {
+        speakerId: 'S_mXRP7Y5M1',
+        speakerLabel: '默认音色',
+        sourceType: 'default',
+      },
+    },
+    saveRuntimeConfig: jest.fn().mockResolvedValue({ ok: true, message: 'saved' }),
+    testLLMConfig: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
+    testS2SConnection: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
   };
 }
 

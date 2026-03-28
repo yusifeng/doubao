@@ -39,7 +39,31 @@ function createSession(): UseTextChatResult {
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
-    testS2SConnection: jest.fn().mockResolvedValue(undefined),
+    runtimeConfig: {
+      replyChainMode: 'official_s2s',
+      llm: {
+        baseUrl: '',
+        apiKey: '',
+        model: '',
+        provider: 'openai-compatible',
+      },
+      s2s: {
+        appId: 'app-id',
+        accessToken: 'token',
+        wsUrl: 'wss://example.com/realtime/dialogue',
+      },
+      androidDialog: {
+        appKeyOverride: '',
+      },
+      voice: {
+        speakerId: 'S_mXRP7Y5M1',
+        speakerLabel: '默认音色',
+        sourceType: 'default',
+      },
+    },
+    saveRuntimeConfig: jest.fn().mockResolvedValue({ ok: true, message: 'saved' }),
+    testLLMConfig: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
+    testS2SConnection: jest.fn().mockResolvedValue({ ok: true, message: 'ok' }),
   };
 }
 
@@ -52,6 +76,7 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onSelectConversation={jest.fn()}
         onCreateConversation={jest.fn()}
         onOpenVoice={jest.fn()}
+        onOpenSettings={jest.fn()}
       />,
     );
 
@@ -71,6 +96,7 @@ describe('VoiceAssistantSessionDrawerContent', () => {
     const onSelectConversation = jest.fn().mockResolvedValue(undefined);
     const onCreateConversation = jest.fn().mockResolvedValue(undefined);
     const onOpenVoice = jest.fn().mockResolvedValue(undefined);
+    const onOpenSettings = jest.fn().mockResolvedValue(undefined);
 
     render(
       <VoiceAssistantSessionDrawerContent
@@ -79,6 +105,7 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onSelectConversation={onSelectConversation}
         onCreateConversation={onCreateConversation}
         onOpenVoice={onOpenVoice}
+        onOpenSettings={onOpenSettings}
       />,
     );
 
@@ -87,11 +114,13 @@ describe('VoiceAssistantSessionDrawerContent', () => {
     fireEvent.press(screen.getByTestId('conversation-drawer-open-voice-button'));
     fireEvent.press(screen.getByTestId('conversation-row-conv-2'));
     fireEvent.press(screen.getByTestId('conversation-drawer-s2s-test-button'));
+    fireEvent.press(screen.getByTestId('conversation-drawer-open-settings-button'));
 
     expect(onClose).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(onCreateConversation).toHaveBeenCalledTimes(1);
       expect(onOpenVoice).toHaveBeenCalledTimes(1);
+      expect(onOpenSettings).toHaveBeenCalledTimes(1);
       expect(onSelectConversation).toHaveBeenCalledWith('conv-2');
       expect(session.testS2SConnection).toHaveBeenCalledTimes(1);
     });
