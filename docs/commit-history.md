@@ -507,3 +507,29 @@
   - Current UX still lacks full in-session mute/resume semantics, so first-button behavior only covers speaking-interrupt and call toggle paths.
 - Rollback:
   - Revert the listed runtime/provider/UI files to restore pre-interrupt behavior and remove the new interrupt API contract from dialog engine types/providers.
+
+## 2026-03-29 02:54 (Asia/Shanghai) - docs-voice-chat-plan-consolidation
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/PLANS.md`
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-chat-flow-stabilization-v2.md`
+  - `docs/references/index.md`
+  - `docs/references/dialog-sdk-event-contract.md`
+  - `plans/codex.md`
+  - `plans/opus.md`
+- Summary:
+  - Added and indexed a new active execution plan `plan-voice-chat-flow-stabilization-v2.md` focused on stabilizing the voice/chat pipeline with an SDK-first approach.
+  - Added `dialog-sdk-event-contract.md` as the baseline contract document for Android Dialog SDK events/directives, evidence levels, uncertainty points, and pre-refactor invariants.
+  - Added two comparative optimization proposals under `plans/` (`codex.md` and `opus.md`) for architecture and rollout trade-off analysis.
+  - Consolidated both proposals into a practical TODO backlog inside the active plan, including phased milestones, gates, and explicit “not in scope” guardrails.
+  - Synced docs indexes (`docs/PLANS.md`, `docs/references/index.md`) so new planning/reference documents are discoverable from the docs TOC.
+- Tests:
+  - Docs-only change; no code execution tests run.
+- Risk:
+  - Planning docs now include a large phased backlog; if not kept in sync with implementation progress, TODO status can drift from reality.
+  - Two parallel proposal docs may cause interpretation divergence if contributors skip the consolidated TODO in the active plan.
+- Rollback:
+  - Revert the listed documentation files to return to the previous planning/reference baseline.

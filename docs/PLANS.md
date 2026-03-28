@@ -8,6 +8,8 @@
 - [plan-android-dialog-sdk-cutover.md](./exec-plans/active/plan-android-dialog-sdk-cutover.md)
 - [plan-my-doubao2-migration.md](./exec-plans/active/plan-my-doubao2-migration.md)
 - [plan-voice-assistant-s2s-v1-implementation.md](./exec-plans/active/plan-voice-assistant-s2s-v1-implementation.md)
+- [plan-realtime-voice-code-optimization.md](./exec-plans/active/plan-realtime-voice-code-optimization.md)
+- [plan-voice-chat-flow-stabilization-v2.md](./exec-plans/active/plan-voice-chat-flow-stabilization-v2.md)
 
 ## 已完成
 
