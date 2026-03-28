@@ -18,6 +18,15 @@ jest.mock('../../config/runtimeConfigRepo', () => ({
       wsUrl: '',
     },
     persona: {
+      activeRoleId: 'persona-default-konan',
+      roles: [
+        {
+          id: 'persona-default-konan',
+          name: '江户川柯南',
+          systemPrompt: 'default prompt',
+          source: 'default',
+        },
+      ],
       systemPrompt: 'default prompt',
       source: 'default',
     },
@@ -77,7 +86,7 @@ function createSession(): UseTextChatResult {
     toggleVoiceInputMuted: jest.fn().mockResolvedValue(undefined),
     interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
-    textReplySourceLabel: '文本回复来源：自定义LLM（deepseek / deepseek-chat）',
+    textReplySourceLabel: 'deepseek / deepseek-chat',
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
@@ -95,6 +104,15 @@ function createSession(): UseTextChatResult {
         wsUrl: 'wss://example.com/realtime/dialogue',
       },
       persona: {
+        activeRoleId: 'persona-default-konan',
+        roles: [
+          {
+            id: 'persona-default-konan',
+            name: '江户川柯南',
+            systemPrompt: 'default prompt',
+            source: 'default',
+          },
+        ],
         systemPrompt: 'default prompt',
         source: 'default',
       },
@@ -130,7 +148,7 @@ describe('VoiceAssistantConversationScreen', () => {
 
     expect(screen.getAllByText('默认会话').length).toBeGreaterThan(0);
     expect(screen.getByText('你好，我在。')).toBeTruthy();
-    expect(screen.getByText('文本回复来源：自定义LLM（deepseek / deepseek-chat）')).toBeTruthy();
+    expect(screen.getByText('deepseek / deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('AI 创作')).toBeNull();
     expect(screen.queryByText('发现智能体')).toBeNull();
   });

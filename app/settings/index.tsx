@@ -15,10 +15,11 @@ export default function SettingsHomeRoute() {
   const llmSummary = session.runtimeConfig.llm.model.trim()
     ? `${session.runtimeConfig.llm.provider || 'openai-compatible'} / ${session.runtimeConfig.llm.model}`
     : '未配置';
-  const personaSummary =
-    session.runtimeConfig.persona.source === 'custom'
-      ? '自定义提示词（仅新会话生效）'
-      : '默认角色提示词（仅新会话生效）';
+  const activePersona =
+    session.runtimeConfig.persona.roles.find(
+      (role) => role.id === session.runtimeConfig.persona.activeRoleId,
+    ) ?? session.runtimeConfig.persona.roles[0];
+  const personaSummary = `${activePersona?.name ?? '未选择角色'}（仅新会话生效）`;
 
   return (
     <SettingsScaffold title="设置" subtitle="配置会在本机保存并立即生效">
@@ -42,7 +43,7 @@ export default function SettingsHomeRoute() {
           testID="settings-home-item-llm"
         />
         <SettingsEntryRow
-          title="系统提示词"
+          title="角色提示词"
           summary={personaSummary}
           onPress={() => router.push('/settings/persona')}
           testID="settings-home-item-persona"

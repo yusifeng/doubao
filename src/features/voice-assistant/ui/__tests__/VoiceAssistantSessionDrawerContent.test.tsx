@@ -35,7 +35,7 @@ function createSession(): UseTextChatResult {
     toggleVoiceInputMuted: jest.fn().mockResolvedValue(undefined),
     interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
-    textReplySourceLabel: '文本回复来源：官方S2S（Dialog SDK）',
+    textReplySourceLabel: '官方 S2S / Dialog SDK',
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
@@ -53,6 +53,15 @@ function createSession(): UseTextChatResult {
         wsUrl: 'wss://example.com/realtime/dialogue',
       },
       persona: {
+        activeRoleId: 'persona-default-konan',
+        roles: [
+          {
+            id: 'persona-default-konan',
+            name: '江户川柯南',
+            systemPrompt: 'default prompt',
+            source: 'default',
+          },
+        ],
         systemPrompt: 'default prompt',
         source: 'default',
       },
@@ -79,7 +88,6 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onClose={jest.fn()}
         onSelectConversation={jest.fn()}
         onCreateConversation={jest.fn()}
-        onOpenVoice={jest.fn()}
         onOpenSettings={jest.fn()}
       />,
     );
@@ -94,12 +102,11 @@ describe('VoiceAssistantSessionDrawerContent', () => {
     expect(screen.queryByTestId('conversation-current-session-row')).toBeNull();
   });
 
-  it('supports create, select, open voice, and connection test actions', async () => {
+  it('supports create, select, and open settings actions', async () => {
     const session = createSession();
     const onClose = jest.fn();
     const onSelectConversation = jest.fn().mockResolvedValue(undefined);
     const onCreateConversation = jest.fn().mockResolvedValue(undefined);
-    const onOpenVoice = jest.fn().mockResolvedValue(undefined);
     const onOpenSettings = jest.fn().mockResolvedValue(undefined);
 
     render(
@@ -108,25 +115,20 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onClose={onClose}
         onSelectConversation={onSelectConversation}
         onCreateConversation={onCreateConversation}
-        onOpenVoice={onOpenVoice}
         onOpenSettings={onOpenSettings}
       />,
     );
 
     fireEvent.press(screen.getByTestId('conversation-close-drawer-button'));
     fireEvent.press(screen.getByTestId('conversation-create-button'));
-    fireEvent.press(screen.getByTestId('conversation-drawer-open-voice-button'));
     fireEvent.press(screen.getByTestId('conversation-row-conv-2'));
-    fireEvent.press(screen.getByTestId('conversation-drawer-s2s-test-button'));
     fireEvent.press(screen.getByTestId('conversation-drawer-open-settings-button'));
 
     expect(onClose).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(onCreateConversation).toHaveBeenCalledTimes(1);
-      expect(onOpenVoice).toHaveBeenCalledTimes(1);
       expect(onOpenSettings).toHaveBeenCalledTimes(1);
       expect(onSelectConversation).toHaveBeenCalledWith('conv-2');
-      expect(session.testS2SConnection).toHaveBeenCalledTimes(1);
     });
   });
 });

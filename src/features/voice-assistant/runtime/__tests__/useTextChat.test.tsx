@@ -43,6 +43,15 @@ const runtimeConfig = {
     wsUrl: '',
   },
   persona: {
+    activeRoleId: 'persona-default-konan',
+    roles: [
+      {
+        id: 'persona-default-konan',
+        name: '江户川柯南',
+        systemPrompt: 'persisted persona prompt',
+        source: 'default' as const,
+      },
+    ],
     systemPrompt: 'persisted persona prompt',
     source: 'default' as const,
   },
@@ -210,6 +219,21 @@ describe('useTextChat realtime lifecycle lock', () => {
       .mockImplementationOnce(async () => ({
         ...runtimeConfig,
         persona: {
+          activeRoleId: 'persona-legacy-custom',
+          roles: [
+            {
+              id: 'persona-default-konan',
+              name: '江户川柯南',
+              systemPrompt: 'persisted persona prompt',
+              source: 'default' as const,
+            },
+            {
+              id: 'persona-legacy-custom',
+              name: '我的角色',
+              systemPrompt: 'late hydrated persona prompt',
+              source: 'custom' as const,
+            },
+          ],
           systemPrompt: 'late hydrated persona prompt',
           source: 'custom' as const,
         },
@@ -236,6 +260,21 @@ describe('useTextChat realtime lifecycle lock', () => {
       .mockImplementationOnce(async () => ({
         ...runtimeConfig,
         persona: {
+          activeRoleId: 'persona-legacy-custom',
+          roles: [
+            {
+              id: 'persona-default-konan',
+              name: '江户川柯南',
+              systemPrompt: 'persisted persona prompt',
+              source: 'default' as const,
+            },
+            {
+              id: 'persona-legacy-custom',
+              name: '我的角色',
+              systemPrompt: 'late hydrated persona prompt',
+              source: 'custom' as const,
+            },
+          ],
           systemPrompt: 'late hydrated persona prompt',
           source: 'custom' as const,
         },

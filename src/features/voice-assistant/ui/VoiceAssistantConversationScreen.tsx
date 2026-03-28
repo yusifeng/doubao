@@ -85,7 +85,7 @@ export function VoiceAssistantConversationScreen({
                 {activeConversation?.title ?? '默认会话'}
               </Text>
               <Text className={voiceAssistantConversationThemeClass.headerSubtext}>
-                {mode === 'voice' ? '语音对话中会继续沿用当前上下文' : session.textReplySourceLabel}
+                {session.textReplySourceLabel}
               </Text>
             </View>
             <TouchableOpacity
@@ -104,13 +104,6 @@ export function VoiceAssistantConversationScreen({
           contentContainerStyle={voiceAssistantThemeStyle.conversationScrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {session.messages.length === 0 ? (
-            <View className={voiceAssistantConversationThemeClass.emptyBubble}>
-              <Text className={voiceAssistantConversationThemeClass.emptyBubbleText}>
-                你好呀，有什么想聊的吗？
-              </Text>
-            </View>
-          ) : null}
           {session.messages.map((message) => (
             <VoiceAssistantMessageBubble key={message.id} message={message} />
           ))}

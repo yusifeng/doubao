@@ -26,6 +26,39 @@
 
 ## Entries
 
+## 2026-03-28 23:49 (Asia/Shanghai) - feat-persona-role-management-and-conversation-ui-parity
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `.gitignore`
+  - `app/_layout.tsx`
+  - `app/settings/index.tsx`
+  - `app/settings/persona.tsx`
+  - `app/settings/__tests__/settingsRoutes.test.tsx`
+  - `app/settings/__tests__/persona.test.tsx`
+  - `src/features/voice-assistant/config/*`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/*`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent.tsx`
+  - `src/features/voice-assistant/ui/__tests__/*`
+  - `src/core/theme/mappers.ts`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+- Summary:
+  - Upgraded persona settings from single prompt editing to role-based management (add/select/delete custom roles) and persisted `activeRoleId + roles` in runtime config/repo with legacy-shape migration.
+  - Updated conversation UI parity details: header subtitle now shows compact model source text, removed empty-state welcome bubble, and tightened chat/drawer visual spacing.
+  - Simplified session drawer actions by removing voice shortcut and connection test entry, keeping search/create/switch/settings, and updated copy to "新建绘画" per current product wording.
+  - Synced runtime/config/UI tests to the new persona schema and updated drawer/conversation behavior; added dedicated `app/settings/__tests__/persona.test.tsx`.
+  - Added `.claude/` to `.gitignore` to avoid committing local tool state.
+- Tests:
+  - `pnpm run test -- --runInBand src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts app/settings/__tests__/persona.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx` (pass, 3 suites / 8 tests)
+- Risk:
+  - Persona role IDs for new custom entries use timestamp/random generation; low-probability ID collision is still possible under extreme rapid adds.
+  - Drawer wording now displays “新建绘画” while action still creates a generic new conversation, which may cause expectation mismatch if product semantics change again.
+- Rollback:
+  - Revert the scoped settings/config/runtime/UI/doc files above to restore single-prompt persona flow and the previous drawer/conversation presentation.
+
 ## 2026-03-28 22:48 (Asia/Shanghai) - refactor-settings-routes-and-persona-snapshot
 
 - Commit: pending

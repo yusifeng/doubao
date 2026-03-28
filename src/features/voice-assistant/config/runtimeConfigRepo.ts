@@ -4,6 +4,7 @@ import {
   type RuntimeConfig,
   type RuntimeConfigDraft,
   mergeRuntimeConfig,
+  normalizeRuntimePersonaConfig,
   readRuntimeConfigFromEnv,
   validateRuntimeConfig,
 } from './runtimeConfig';
@@ -52,7 +53,10 @@ type StoredRuntimeConfig = {
   s2s?: {
     appId?: string;
   };
-  persona?: RuntimeConfig['persona'];
+  persona?: Partial<RuntimeConfig['persona']> & {
+    systemPrompt?: string;
+    source?: 'default' | 'custom';
+  };
   voice?: RuntimeConfig['voice'];
 };
 
@@ -102,6 +106,12 @@ export async function getEffectiveRuntimeConfig(): Promise<RuntimeConfig> {
     readSecureValue(SECURE_ANDROID_APP_KEY),
   ]);
 
+  const normalizedPersona = normalizeRuntimePersonaConfig({
+    ...stored.persona,
+    roles: stored.persona?.roles,
+    activeRoleId: stored.persona?.activeRoleId,
+  });
+
   return mergeRuntimeConfig(env, {
     replyChainMode: stored.replyChainMode,
     llm: {
@@ -114,7 +124,7 @@ export async function getEffectiveRuntimeConfig(): Promise<RuntimeConfig> {
       appId: stored.s2s?.appId,
       accessToken: s2sAccessToken || undefined,
     },
-    persona: stored.persona,
+    persona: normalizedPersona,
     androidDialog: {
       appKeyOverride: androidAppKey || undefined,
     },
@@ -133,7 +143,12 @@ export async function saveRuntimeConfig(nextConfig: RuntimeConfig): Promise<Runt
     s2s: {
       appId: nextConfig.s2s.appId,
     },
-    persona: nextConfig.persona,
+    persona: {
+      activeRoleId: nextConfig.persona.activeRoleId,
+      roles: nextConfig.persona.roles,
+      systemPrompt: nextConfig.persona.systemPrompt,
+      source: nextConfig.persona.source,
+    },
     voice: nextConfig.voice,
   });
 

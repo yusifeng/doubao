@@ -56,18 +56,6 @@ function RootDrawerNavigator() {
     });
   }
 
-  async function handleOpenVoice() {
-    let conversationId = session.activeConversationId;
-    if (!conversationId) {
-      conversationId = await session.createConversation('新会话');
-    }
-
-    router.replace({
-      pathname: '/conversation/[conversationId]',
-      params: { conversationId, mode: 'voice' },
-    });
-  }
-
   async function handleOpenSettings() {
     router.push('/settings');
   }
@@ -84,10 +72,6 @@ function RootDrawerNavigator() {
           }}
           onCreateConversation={async () => {
             await handleCreateConversation();
-            props.navigation.closeDrawer();
-          }}
-          onOpenVoice={async () => {
-            await handleOpenVoice();
             props.navigation.closeDrawer();
           }}
           onOpenSettings={async () => {

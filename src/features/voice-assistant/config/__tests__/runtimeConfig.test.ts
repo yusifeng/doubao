@@ -19,6 +19,8 @@ describe('runtimeConfig', () => {
         wsUrl: undefined,
       },
       persona: {
+        activeRoleId: undefined,
+        roles: undefined,
         systemPrompt: undefined,
         source: undefined,
       },
@@ -35,6 +37,8 @@ describe('runtimeConfig', () => {
     expect(merged.s2s.appId).toBe(base.s2s.appId);
     expect(merged.s2s.accessToken).toBe(base.s2s.accessToken);
     expect(merged.s2s.wsUrl).toBe(base.s2s.wsUrl);
+    expect(merged.persona.activeRoleId).toBe(base.persona.activeRoleId);
+    expect(merged.persona.roles).toEqual(base.persona.roles);
     expect(merged.persona.systemPrompt).toBe(base.persona.systemPrompt);
     expect(merged.persona.source).toBe(base.persona.source);
     expect(merged.androidDialog.appKeyOverride).toBe(base.androidDialog.appKeyOverride);

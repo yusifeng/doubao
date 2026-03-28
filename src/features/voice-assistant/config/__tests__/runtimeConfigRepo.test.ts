@@ -111,6 +111,25 @@ describe('runtimeConfigRepo', () => {
     expect(config.voice.speakerId).toBe('custom_voice_id_1');
   });
 
+  it('migrates legacy persona shape into role list', async () => {
+    mockAsyncStorage.getItem.mockResolvedValue(
+      JSON.stringify({
+        persona: {
+          systemPrompt: '你是 Sherlock Holmes。',
+          source: 'custom',
+        },
+      }),
+    );
+
+    const config = await getEffectiveRuntimeConfig();
+    const activeRole = config.persona.roles.find((role) => role.id === config.persona.activeRoleId);
+
+    expect(config.persona.roles.length).toBeGreaterThanOrEqual(2);
+    expect(activeRole?.source).toBe('custom');
+    expect(activeRole?.systemPrompt).toBe('你是 Sherlock Holmes。');
+    expect(config.persona.systemPrompt).toBe('你是 Sherlock Holmes。');
+  });
+
   it('stores sensitive and non-sensitive fields separately', async () => {
     const envConfig = readRuntimeConfigFromEnv();
     const nextConfig = buildRuntimeConfigForSave(envConfig, {
@@ -141,6 +160,8 @@ describe('runtimeConfigRepo', () => {
     const storedPayload = JSON.parse(mockAsyncStorage.setItem.mock.calls[0][1]);
     expect(storedPayload.llm.apiKey).toBeUndefined();
     expect(storedPayload.s2s.accessToken).toBeUndefined();
+    expect(storedPayload.persona.activeRoleId).toBeTruthy();
+    expect(Array.isArray(storedPayload.persona.roles)).toBe(true);
 
     expect(mockSecureStore.setItemAsync).toHaveBeenCalledWith(
       'voice_assistant.runtime_config.llm_api_key.v1',

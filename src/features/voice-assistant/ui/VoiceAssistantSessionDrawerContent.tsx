@@ -13,7 +13,6 @@ type VoiceAssistantSessionDrawerContentProps = {
   onClose: () => void;
   onSelectConversation: (conversationId: string) => Promise<void> | void;
   onCreateConversation: () => Promise<void> | void;
-  onOpenVoice: () => Promise<void> | void;
   onOpenSettings: () => Promise<void> | void;
 };
 
@@ -86,7 +85,6 @@ export function VoiceAssistantSessionDrawerContent({
   onClose,
   onSelectConversation,
   onCreateConversation,
-  onOpenVoice,
   onOpenSettings,
 }: VoiceAssistantSessionDrawerContentProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,7 +121,7 @@ export function VoiceAssistantSessionDrawerContent({
           <TextInput
             className={voiceAssistantConversationThemeClass.drawerSearchInput}
             onChangeText={setSearchQuery}
-            placeholder="搜索会话"
+            placeholder="搜索"
             placeholderTextColor="#9CA3AF"
             testID="conversation-drawer-search-input"
             value={searchQuery}
@@ -136,14 +134,7 @@ export function VoiceAssistantSessionDrawerContent({
             onPress={() => void onCreateConversation()}
             testID="conversation-create-button"
           >
-            <Text className={voiceAssistantConversationThemeClass.drawerPrimaryActionText}>新建会话</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            className={voiceAssistantConversationThemeClass.drawerGhostAction}
-            onPress={() => void onOpenVoice()}
-            testID="conversation-drawer-open-voice-button"
-          >
-            <Text className={voiceAssistantConversationThemeClass.drawerGhostActionText}>切到语音</Text>
+            <Text className={voiceAssistantConversationThemeClass.drawerPrimaryActionText}>新建绘画</Text>
           </TouchableOpacity>
         </View>
 
@@ -195,22 +186,13 @@ export function VoiceAssistantSessionDrawerContent({
         </ScrollView>
 
         <View className={voiceAssistantConversationThemeClass.drawerFooter}>
-          <View className="flex-row items-center justify-between">
-            <TouchableOpacity
-              className={voiceAssistantConversationThemeClass.drawerFooterButton}
-              onPress={() => void session.testS2SConnection()}
-              testID="conversation-drawer-s2s-test-button"
-            >
-              <Text className={voiceAssistantConversationThemeClass.drawerFooterButtonText}>连接测试</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
-              onPress={() => void onOpenSettings()}
-              testID="conversation-drawer-open-settings-button"
-            >
-              <VoiceAssistantIcon name="settings" size={20} color="#475569" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            className="h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+            onPress={() => void onOpenSettings()}
+            testID="conversation-drawer-open-settings-button"
+          >
+            <VoiceAssistantIcon name="settings" size={20} color="#475569" />
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

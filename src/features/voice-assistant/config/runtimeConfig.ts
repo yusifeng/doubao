@@ -31,14 +31,27 @@ export type RuntimeS2SConfig = {
   wsUrl: string;
 };
 
+export type RuntimePersonaRoleSource = 'default' | 'custom';
+
+export type RuntimePersonaRole = {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  source: RuntimePersonaRoleSource;
+};
+
+export type RuntimePersonaConfig = {
+  activeRoleId: string;
+  roles: RuntimePersonaRole[];
+  systemPrompt: string;
+  source: RuntimePersonaRoleSource;
+};
+
 export type RuntimeConfig = {
   replyChainMode: ReplyChainMode;
   llm: RuntimeLLMConfig;
   s2s: RuntimeS2SConfig;
-  persona: {
-    systemPrompt: string;
-    source: 'default' | 'custom';
-  };
+  persona: RuntimePersonaConfig;
   androidDialog: {
     appKeyOverride: string;
   };
@@ -53,10 +66,13 @@ export type RuntimeConfigDraft = Partial<{
   replyChainMode: ReplyChainMode;
   llm: Partial<RuntimeLLMConfig>;
   s2s: Partial<RuntimeS2SConfig>;
-  persona: Partial<RuntimeConfig['persona']>;
+  persona: Partial<RuntimePersonaConfig>;
   androidDialog: Partial<RuntimeConfig['androidDialog']>;
   voice: Partial<RuntimeConfig['voice']>;
 }>;
+
+export const RUNTIME_PERSONA_DEFAULT_ROLE_ID = 'persona-default-konan';
+const RUNTIME_PERSONA_DEFAULT_ROLE_NAME = '江户川柯南';
 
 export const VOICE_ASSISTANT_DEFAULT_VOICE_OPTIONS: RuntimeVoiceOption[] = [
   { id: 'saturn_zh_female_aojiaonvyou_tob', label: '傲娇女友(女)', sourceType: 'default' },
@@ -86,9 +102,98 @@ export function listRuntimeVoiceOptions(): RuntimeVoiceOption[] {
   return [...VOICE_ASSISTANT_DEFAULT_VOICE_OPTIONS];
 }
 
+function createDefaultPersonaRole(systemPrompt = KONAN_CHARACTER_MANIFEST): RuntimePersonaRole {
+  return {
+    id: RUNTIME_PERSONA_DEFAULT_ROLE_ID,
+    name: RUNTIME_PERSONA_DEFAULT_ROLE_NAME,
+    systemPrompt: systemPrompt.trim() || KONAN_CHARACTER_MANIFEST,
+    source: 'default',
+  };
+}
+
+function normalizeRuntimePersonaRoles(input?: RuntimePersonaRole[]): RuntimePersonaRole[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const usedIds = new Set<string>();
+  const normalized = input
+    .map((role, index) => {
+      const prompt = role?.systemPrompt?.trim();
+      if (!prompt) {
+        return null;
+      }
+      const rawId = role?.id?.trim() || `persona-role-${index + 1}`;
+      const id = usedIds.has(rawId) ? `${rawId}-${index + 1}` : rawId;
+      usedIds.add(id);
+      return {
+        id,
+        name: role?.name?.trim() || `角色 ${index + 1}`,
+        systemPrompt: prompt,
+        source: role?.source === 'default' ? 'default' : 'custom',
+      } satisfies RuntimePersonaRole;
+    })
+    .filter((item): item is RuntimePersonaRole => Boolean(item));
+
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const hasDefaultRole = normalized.some((role) => role.id === RUNTIME_PERSONA_DEFAULT_ROLE_ID);
+  if (!hasDefaultRole) {
+    normalized.unshift(createDefaultPersonaRole());
+  }
+
+  return normalized;
+}
+
+export function normalizeRuntimePersonaConfig(
+  input?: Partial<RuntimePersonaConfig> | null,
+): RuntimePersonaConfig {
+  const fallbackPrompt = input?.systemPrompt?.trim() || KONAN_CHARACTER_MANIFEST;
+  const baseRoles = normalizeRuntimePersonaRoles(input?.roles);
+  let roles = baseRoles;
+  let preferredFallbackRoleId: string | null = null;
+  if (roles.length === 0) {
+    const defaultRole = createDefaultPersonaRole();
+    if (fallbackPrompt.trim() && fallbackPrompt.trim() !== KONAN_CHARACTER_MANIFEST.trim()) {
+      preferredFallbackRoleId = 'persona-legacy-custom';
+      roles = [
+        defaultRole,
+        {
+          id: preferredFallbackRoleId,
+          name: '我的角色',
+          systemPrompt: fallbackPrompt.trim(),
+          source: 'custom',
+        },
+      ];
+    } else {
+      roles = [defaultRole];
+    }
+  }
+  const requestedActiveRoleId = input?.activeRoleId?.trim();
+  const fallbackActiveRoleId =
+    input?.source === 'custom' && preferredFallbackRoleId ? preferredFallbackRoleId : null;
+  const activeRole =
+    (requestedActiveRoleId && roles.find((role) => role.id === requestedActiveRoleId)) ??
+    (fallbackActiveRoleId && roles.find((role) => role.id === fallbackActiveRoleId)) ??
+    roles[0];
+
+  return {
+    activeRoleId: activeRole.id,
+    roles,
+    systemPrompt: activeRole.systemPrompt,
+    source: activeRole.source,
+  };
+}
+
 export function readRuntimeConfigFromEnv(): RuntimeConfig {
   const envS2S = readS2SEnv();
   const envLLM = readLLMEnv();
+  const persona = normalizeRuntimePersonaConfig({
+    activeRoleId: RUNTIME_PERSONA_DEFAULT_ROLE_ID,
+    roles: [createDefaultPersonaRole()],
+  });
   return {
     replyChainMode: readReplyChainMode(),
     llm: {
@@ -102,10 +207,7 @@ export function readRuntimeConfigFromEnv(): RuntimeConfig {
       accessToken: envS2S?.accessToken ?? '',
       wsUrl: VOICE_ASSISTANT_S2S_WS_URL,
     },
-    persona: {
-      systemPrompt: KONAN_CHARACTER_MANIFEST,
-      source: 'default',
-    },
+    persona,
     androidDialog: {
       appKeyOverride: envS2S?.appKey ?? '',
     },
@@ -127,6 +229,12 @@ export function mergeRuntimeConfig(base: RuntimeConfig, draft?: RuntimeConfigDra
   const nextAndroidDialog = draft.androidDialog ?? {};
   const nextVoice = draft.voice ?? {};
 
+  const mergedPersona = normalizeRuntimePersonaConfig({
+    ...base.persona,
+    ...nextPersona,
+    roles: nextPersona.roles ?? base.persona.roles,
+  });
+
   return {
     replyChainMode: draft.replyChainMode ?? base.replyChainMode,
     llm: {
@@ -140,10 +248,7 @@ export function mergeRuntimeConfig(base: RuntimeConfig, draft?: RuntimeConfigDra
       accessToken: nextS2S.accessToken ?? base.s2s.accessToken,
       wsUrl: base.s2s.wsUrl,
     },
-    persona: {
-      systemPrompt: nextPersona.systemPrompt ?? base.persona.systemPrompt,
-      source: nextPersona.source ?? base.persona.source,
-    },
+    persona: mergedPersona,
     androidDialog: {
       appKeyOverride: nextAndroidDialog.appKeyOverride ?? base.androidDialog.appKeyOverride,
     },
@@ -178,6 +283,19 @@ export function validateRuntimeConfig(config: RuntimeConfig): string[] {
 }
 
 export function isRuntimeConfigEqual(left: RuntimeConfig, right: RuntimeConfig): boolean {
+  const leftRoles = left.persona.roles;
+  const rightRoles = right.persona.roles;
+  const rolesEqual =
+    leftRoles.length === rightRoles.length &&
+    leftRoles.every((role, index) => {
+      const peer = rightRoles[index];
+      return (
+        role?.id === peer?.id &&
+        role?.name === peer?.name &&
+        role?.systemPrompt === peer?.systemPrompt &&
+        role?.source === peer?.source
+      );
+    });
   return (
     left.replyChainMode === right.replyChainMode &&
     left.llm.baseUrl === right.llm.baseUrl &&
@@ -186,6 +304,8 @@ export function isRuntimeConfigEqual(left: RuntimeConfig, right: RuntimeConfig):
     left.llm.provider === right.llm.provider &&
     left.s2s.appId === right.s2s.appId &&
     left.s2s.accessToken === right.s2s.accessToken &&
+    left.persona.activeRoleId === right.persona.activeRoleId &&
+    rolesEqual &&
     left.persona.systemPrompt === right.persona.systemPrompt &&
     left.persona.source === right.persona.source &&
     left.androidDialog.appKeyOverride === right.androidDialog.appKeyOverride &&

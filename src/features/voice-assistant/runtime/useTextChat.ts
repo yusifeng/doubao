@@ -231,10 +231,10 @@ export function useTextChat(): UseTextChatResult {
     ? 'Demo实时通话模式（连续语音上行）'
     : '稳定通话模式（自动听说）';
   const textReplySourceLabel = useAndroidDialogTextRuntime
-    ? '文本回复来源：官方S2S（Dialog SDK）'
+    ? '官方 S2S / Dialog SDK'
     : useCustomReplyProvider
-    ? `文本回复来源：自定义LLM（${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}）`
-    : '文本回复来源：本地Fallback';
+    ? `${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}`
+    : '本地 Fallback';
   const voiceLoopActiveRef = useRef(false);
   const voiceLoopRunningRef = useRef(false);
   const realtimeCallPhaseRef = useRef<RealtimeCallPhase>('idle');

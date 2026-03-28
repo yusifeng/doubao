@@ -16,6 +16,15 @@ describe('createVoiceAssistantProviders platform routing', () => {
       wsUrl: DEFAULT_S2S_WS_URL,
     },
     persona: {
+      activeRoleId: 'persona-default-konan',
+      roles: [
+        {
+          id: 'persona-default-konan',
+          name: '江户川柯南',
+          systemPrompt: 'default prompt',
+          source: 'default' as const,
+        },
+      ],
       systemPrompt: 'default prompt',
       source: 'default' as const,
     },

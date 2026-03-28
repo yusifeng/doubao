@@ -45,7 +45,19 @@ const baseSession: UseTextChatResult = {
     replyChainMode: 'official_s2s',
     llm: { baseUrl: 'https://x', apiKey: 'k', model: 'm', provider: 'openai-compatible' },
     s2s: { appId: 'app-id', accessToken: 'token', wsUrl: 'wss://example.com' },
-    persona: { systemPrompt: 'prompt', source: 'default' },
+    persona: {
+      activeRoleId: 'persona-default-konan',
+      roles: [
+        {
+          id: 'persona-default-konan',
+          name: '江户川柯南',
+          systemPrompt: 'prompt',
+          source: 'default',
+        },
+      ],
+      systemPrompt: 'prompt',
+      source: 'default',
+    },
     androidDialog: { appKeyOverride: '' },
     voice: { speakerId: 'saturn_zh_male_fuheigongzi_tob', speakerLabel: '腹黑公子(男)', sourceType: 'default' },
   },
