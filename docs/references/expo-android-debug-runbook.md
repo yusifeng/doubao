@@ -577,7 +577,11 @@ pnpm exec expo start -c
 - 助手播报必须优先走 S2S voice（Android Dialog `client-triggered tts`）
 - Android 引擎初始化必须使用 `DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`；否则 `useClientTriggeredTts` / `ChatTtsText` 指令可能报 `400060` 并回落官方默认回复音频
 - 每轮在 `asr_start` 阶段选择 `useClientTriggeredTts`，`session_ready` 只做会话就绪标记
+- 每轮在 `asr_start` 重新设置 client-triggered TTS；`voice_round` 阶段避免重复切换，防止 `400061` 导致误判不可播
 - 若 S2S voice 切换失败（如 400060），本轮仍必须保留 custom LLM 文本落库；并优先打断官方播报，避免用户听到“官方脑子”的回复
+- 若本轮 S2S voice 未能接管，仅保留 custom LLM 文本落库并提示“语音播报未就绪”；不走本地 TTS
+- `custom_llm` 下自动插话打断以有效 `asr_partial` 为准；`asr_start` 噪声不应直接触发打断（否则容易出现等待回话阶段 UI 闪烁）
+- 若 `useClientTriggeredTts` 返回 `400061`，按“已处于 client-triggered 模式”处理，不应将本轮误判为不可播音
 
 排障判据（重要）：
 
@@ -587,9 +591,9 @@ pnpm exec expo start -c
 - 此时优先检查：
   1. Native prepare 是否设置 `PARAMS_KEY_DIALOG_WORK_MODE_INT = DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`
   2. JS 侧是否收到并处理了 `asr_start`
-  3. `useClientTriggeredTts` 是否报 `400060`（常见于模式未切到 delegate）
+  3. `useClientTriggeredTts` 是否报 `400060`（常见于模式未切到 delegate）或 `400061`（通常表示已在 client 模式）
   4. `asr_final` 后是否真正进入 `runAndroidReplyFlow` 并落库 custom 文本
-  5. `interruptCurrentDialog` 是否返回 `Directive unsupported`（该情况下不能依赖打断兜底）
+  5. `interruptCurrentDialog` 是否返回 `Directive unsupported`（该情况下不能依赖中途打断补救，需前置保证 delegate + client-triggered 生效）
 
 ### 14.3 为什么这样分
 

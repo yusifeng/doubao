@@ -26,6 +26,33 @@
 
 ## Entries
 
+## 2026-03-29 01:54 (Asia/Shanghai) - fix-custom-llm-s2s-voice-turn-stability
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+  - `docs/references/expo-android-debug-runbook.md`
+- Summary:
+  - Fixed custom LLM S2S turn stability by handling Android Dialog `useClientTriggeredTts` error `400061` as "already enabled" and continuing S2S playback.
+  - Reworked per-turn voice handling to re-arm client-triggered TTS on `asr_start` and reset cross-turn guard state early, reducing second-turn silent playback risk.
+  - Hardened voice/text mode transition races in conversation UI: added delayed-stop queueing, delayed-recover start, and pending-start-on-conversation-ready behavior.
+  - Added regression tests for multi-turn re-arm, `400061` continuation, fast mode switch races, and cold-start conversation bootstrap startup.
+  - Synced design/runbook docs with strict S2S-first behavior and current Android Dialog runtime constraints.
+- Tests:
+  - `pnpm run test -- --runInBand src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx` (pass, 1 suite / 8 tests)
+  - `pnpm run test -- --runInBand src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass, 2 suites / 34 tests)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable defects)
+- Risk:
+  - Voice mode transition orchestration now relies on several in-flight refs; future UI lifecycle refactors should re-verify queued stop/recover semantics on device.
+  - Android Dialog SDK close-stage `Oboe ErrorClosed` logs still appear during teardown; currently treated as non-blocking noise but should continue to be monitored.
+- Rollback:
+  - Revert the six scoped files above to return to the prior voice turn/mode-switch behavior before this stabilization patch set.
+
 ## 2026-03-28 23:49 (Asia/Shanghai) - feat-persona-role-management-and-conversation-ui-parity
 
 - Commit: pending

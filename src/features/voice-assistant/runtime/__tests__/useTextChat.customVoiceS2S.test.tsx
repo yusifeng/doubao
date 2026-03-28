@@ -247,6 +247,52 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     });
   });
 
+  it('re-arms client-triggered tts for each custom voice turn', async () => {
+    mockReplyGenerateReplyStream
+      .mockImplementationOnce(async function* firstRound() {
+        yield '第一轮 custom_llm 回复';
+      })
+      .mockImplementationOnce(async function* secondRound() {
+        yield '第二轮 custom_llm 回复';
+      });
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-rearm' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-rearm' });
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-rearm' });
+      mockDialogListener?.({ type: 'asr_final', text: '第一轮提问', sessionId: 'voice-custom-rearm' });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some((message) => message.role === 'assistant' && message.content.includes('第一轮 custom_llm')),
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-rearm' });
+      mockDialogListener?.({ type: 'asr_final', text: '第二轮提问', sessionId: 'voice-custom-rearm' });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some((message) => message.role === 'assistant' && message.content.includes('第二轮 custom_llm')),
+      ).toBe(true);
+    });
+
+    expect(mockDialogUseClientTriggeredTts.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('persists partial assistant text when a newer voice turn preempts the current round', async () => {
     let releaseFirstRound: (() => void) | null = null;
     const firstRoundBlocked = new Promise<void>((resolve) => {
@@ -299,7 +345,7 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     });
   });
 
-  it('keeps custom_llm text generation even when client tts mode cannot be enabled', async () => {
+  it('keeps custom_llm text generation and skips local speak when client tts mode cannot be enabled', async () => {
     mockDialogUseClientTriggeredTts.mockRejectedValue(new Error('trigger mode switch failed'));
 
     const { result } = renderHook(() => useTextChat());
@@ -343,8 +389,40 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
       ),
     ).toBe(false);
     expect(mockDialogStreamClientTts).not.toHaveBeenCalled();
+    expect(mockAudioSpeak).not.toHaveBeenCalled();
     expect(mockDialogUseServerTriggeredTts).not.toHaveBeenCalled();
     expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
+  });
+
+  it('treats 400061 as already-enabled client tts and continues s2s playback', async () => {
+    mockDialogUseClientTriggeredTts.mockRejectedValueOnce(new Error('Use client triggered tts failed: 400061'));
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-400061' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-400061' });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'voice-custom-400061' });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
+        ),
+      ).toBe(true);
+    });
+
+    expect(mockDialogStreamClientTts).toHaveBeenCalled();
+    expect(mockAudioSpeak).not.toHaveBeenCalled();
   });
 
   it('keeps custom_llm-only behavior when custom generation fails without partial text', async () => {

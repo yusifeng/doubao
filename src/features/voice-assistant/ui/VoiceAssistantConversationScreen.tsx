@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -28,6 +28,13 @@ export function VoiceAssistantConversationScreen({
 }: VoiceAssistantConversationScreenProps) {
   const [draft, setDraft] = useState('');
   const [voiceDisplayMode, setVoiceDisplayMode] = useState<'avatar' | 'dialogue'>('avatar');
+  const voiceToggleInFlightRef = useRef(false);
+  const previousModeRef = useRef<ConversationScreenMode | null>(null);
+  const shouldRecoverVoiceAfterStopRef = useRef(false);
+  const pendingStopAfterInFlightRef = useRef(false);
+  const pendingStartWhenConversationReadyRef = useRef(false);
+  const modeRef = useRef(mode);
+  const voiceActiveRef = useRef(session.isVoiceActive);
 
   const activeConversation = useMemo(
     () => session.conversations.find((conversation) => conversation.id === session.activeConversationId) ?? null,
@@ -58,6 +65,150 @@ export function VoiceAssistantConversationScreen({
       setVoiceDisplayMode('avatar');
     }
   }, [mode]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+    voiceActiveRef.current = session.isVoiceActive;
+  }, [mode, session.isVoiceActive]);
+
+  const maybeRecoverVoiceAfterStop = useCallback(() => {
+    if (
+      !shouldRecoverVoiceAfterStopRef.current ||
+      modeRef.current !== 'voice' ||
+      voiceActiveRef.current ||
+      voiceToggleInFlightRef.current
+    ) {
+      return;
+    }
+    shouldRecoverVoiceAfterStopRef.current = false;
+    voiceToggleInFlightRef.current = true;
+    void session.toggleVoice().catch(() => {
+      // Best effort: retry is handled by subsequent mode transitions.
+    }).finally(() => {
+      voiceToggleInFlightRef.current = false;
+    });
+  }, [session.toggleVoice]);
+
+  const maybeStopAfterInFlight = useCallback(() => {
+    if (!pendingStopAfterInFlightRef.current || voiceToggleInFlightRef.current) {
+      return;
+    }
+    if (modeRef.current === 'voice') {
+      return;
+    }
+    if (!voiceActiveRef.current) {
+      return;
+    }
+    pendingStopAfterInFlightRef.current = false;
+    voiceToggleInFlightRef.current = true;
+    void session.toggleVoice().catch(() => {
+      // Best effort: if delayed shutdown fails, next mode transition will retry.
+    }).finally(() => {
+      voiceToggleInFlightRef.current = false;
+    });
+  }, [session.toggleVoice]);
+
+  useEffect(() => {
+    const previousMode = previousModeRef.current;
+    previousModeRef.current = mode;
+
+    if (mode !== 'voice') {
+      shouldRecoverVoiceAfterStopRef.current = false;
+      pendingStartWhenConversationReadyRef.current = false;
+    } else {
+      pendingStopAfterInFlightRef.current = false;
+    }
+
+    const enteringVoice = previousMode !== 'voice' && mode === 'voice';
+    const leavingVoice = previousMode === 'voice' && mode !== 'voice';
+
+    if (leavingVoice) {
+      if (voiceToggleInFlightRef.current) {
+        pendingStopAfterInFlightRef.current = true;
+        return;
+      }
+      if (!session.isVoiceActive) {
+        pendingStopAfterInFlightRef.current = false;
+        return;
+      }
+      voiceToggleInFlightRef.current = true;
+      void session.toggleVoice().catch(() => {
+        // Best effort: if shutdown fails, runtime state will still be reconciled by hook internals.
+      }).finally(() => {
+        voiceToggleInFlightRef.current = false;
+        maybeStopAfterInFlight();
+        maybeRecoverVoiceAfterStop();
+      });
+      return;
+    }
+
+    if (!enteringVoice) {
+      return;
+    }
+
+    if (voiceToggleInFlightRef.current) {
+      shouldRecoverVoiceAfterStopRef.current = true;
+      return;
+    }
+
+    if (session.isVoiceActive) {
+      return;
+    }
+    if (!session.activeConversationId) {
+      pendingStartWhenConversationReadyRef.current = true;
+      return;
+    }
+
+    voiceToggleInFlightRef.current = true;
+    pendingStartWhenConversationReadyRef.current = false;
+    void session.toggleVoice().catch(() => {
+      // Best effort: if startup fails, user can retry from the voice screen.
+    }).finally(() => {
+      voiceToggleInFlightRef.current = false;
+      maybeStopAfterInFlight();
+      maybeRecoverVoiceAfterStop();
+    });
+  }, [
+    maybeRecoverVoiceAfterStop,
+    maybeStopAfterInFlight,
+    mode,
+    session.activeConversationId,
+    session.isVoiceActive,
+    session.toggleVoice,
+  ]);
+
+  useEffect(() => {
+    maybeStopAfterInFlight();
+    maybeRecoverVoiceAfterStop();
+  }, [maybeRecoverVoiceAfterStop, maybeStopAfterInFlight, mode, session.isVoiceActive]);
+
+  useEffect(() => {
+    if (
+      mode !== 'voice' ||
+      !pendingStartWhenConversationReadyRef.current ||
+      !session.activeConversationId ||
+      session.isVoiceActive ||
+      voiceToggleInFlightRef.current
+    ) {
+      return;
+    }
+    pendingStartWhenConversationReadyRef.current = false;
+    voiceToggleInFlightRef.current = true;
+    void session.toggleVoice().catch(() => {
+      // Best effort: if startup fails, user can retry from the voice screen.
+    }).finally(() => {
+      voiceToggleInFlightRef.current = false;
+      maybeStopAfterInFlight();
+      maybeRecoverVoiceAfterStop();
+    });
+  }, [
+    maybeRecoverVoiceAfterStop,
+    maybeStopAfterInFlight,
+    mode,
+    session.activeConversationId,
+    session.isVoiceActive,
+    session.toggleVoice,
+  ]);
 
   async function onSend() {
     const clean = draft.trim();
@@ -148,7 +299,7 @@ export function VoiceAssistantConversationScreen({
               session={session}
               onExitVoice={() => onChangeMode('text')}
               onOpenDrawer={onOpenDrawer}
-              autoStartOnMount
+              autoStartOnMount={false}
               displayMode={voiceDisplayMode}
               onToggleDisplayMode={() => {
                 setVoiceDisplayMode((current) => (current === 'avatar' ? 'dialogue' : 'avatar'));

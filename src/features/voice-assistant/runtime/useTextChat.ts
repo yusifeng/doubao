@@ -251,6 +251,7 @@ export function useTextChat(): UseTextChatResult {
   const realtimeListeningStateRef = useRef<RealtimeListeningState>('ready');
   const hasBootstrappedConversationRef = useRef(false);
   const androidDialogPreparedRef = useRef(false);
+  const androidDialogPreparedWorkModeRef = useRef<DialogWorkMode | null>(null);
   const androidDialogModeRef = useRef<AndroidDialogMode | null>(null);
   const androidDialogInterruptedRef = useRef(false);
   const androidDialogInterruptInFlightRef = useRef(false);
@@ -566,11 +567,14 @@ export function useTextChat(): UseTextChatResult {
     if (!useAndroidDialogRuntime) {
       return;
     }
-    if (androidDialogPreparedRef.current) {
+    const needsPrepare =
+      !androidDialogPreparedRef.current || androidDialogPreparedWorkModeRef.current !== androidDialogWorkMode;
+    if (!needsPrepare) {
       return;
     }
     await providers.dialogEngine.prepare({ dialogWorkMode: androidDialogWorkMode });
     androidDialogPreparedRef.current = true;
+    androidDialogPreparedWorkModeRef.current = androidDialogWorkMode;
   }, [androidDialogWorkMode, providers.dialogEngine, useAndroidDialogRuntime]);
 
   const persistPendingAndroidAssistantDraft = useCallback(async (options?: { conversationId?: string | null }) => {
@@ -610,9 +614,14 @@ export function useTextChat(): UseTextChatResult {
       if (!nextConversationId) {
         return;
       }
-      await ensureAndroidDialogPrepared();
+      const workModeChanged =
+        androidDialogPreparedWorkModeRef.current !== null &&
+        androidDialogPreparedWorkModeRef.current !== androidDialogWorkMode;
       const shouldRestart =
-        options?.forceRestart || !androidDialogModeRef.current || androidDialogModeRef.current !== mode;
+        options?.forceRestart ||
+        !androidDialogModeRef.current ||
+        androidDialogModeRef.current !== mode ||
+        workModeChanged;
       if (shouldRestart && androidDialogModeRef.current) {
         await persistPendingAndroidAssistantDraft();
         rememberRetiredAndroidDialogSession(androidDialogSessionIdRef.current);
@@ -627,6 +636,7 @@ export function useTextChat(): UseTextChatResult {
       if (!shouldRestart && androidDialogModeRef.current === mode) {
         return;
       }
+      await ensureAndroidDialogPrepared();
       const inputMode: DialogConversationInputMode = mode === 'voice' ? 'audio' : 'text';
       // Reset readiness before startup so incoming lifecycle events can only move state forward.
       androidDialogSessionReadyRef.current = false;
@@ -752,6 +762,17 @@ export function useTextChat(): UseTextChatResult {
         } catch (error) {
           const message = error instanceof Error ? error.message : 'unknown error';
           lastMessage = message;
+          const alreadyClientMode = message.includes('400061');
+          if (alreadyClientMode) {
+            // Some SDK builds return 400061 when the trigger mode is already client-side.
+            androidDialogClientTtsEnabledRef.current = true;
+            providers.observability.log('info', 'custom llm client tts already enabled', {
+              generation,
+              source,
+              attempt,
+            });
+            return true;
+          }
           androidDialogClientTtsEnabledRef.current = false;
           const lower = message.toLowerCase();
           const shouldRetry =
@@ -977,6 +998,12 @@ export function useTextChat(): UseTextChatResult {
         }
         setPendingAssistantReply('');
         await persistAssistantText(finalAssistantText);
+        if (assistantMessageType === 'audio' && !canStreamViaClientTts) {
+          providers.observability.log('warn', 'custom llm s2s voice unavailable; skip local tts fallback', {
+            generation,
+          });
+          setConnectivityHint('自定义LLM文本已生成，S2S语音播报未就绪。');
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'unknown error';
         providers.observability.log('warn', 'custom llm voice round failed after partial stream', {
@@ -1130,7 +1157,7 @@ export function useTextChat(): UseTextChatResult {
   );
 
   const maybeInterruptOnBargeIn = useCallback(
-    (eventType: 'asr_start' | 'asr_partial') => {
+    ({ eventType, text }: { eventType: 'asr_start' | 'asr_partial'; text?: string }) => {
       if (!useAndroidDialogRuntime || !isVoiceActive || !voiceLoopActiveRef.current) {
         return;
       }
@@ -1140,12 +1167,27 @@ export function useTextChat(): UseTextChatResult {
       if (androidDialogInterruptedRef.current || androidDialogInterruptInFlightRef.current) {
         return;
       }
+      if (replyChainMode === 'custom_llm') {
+        // Ignore noisy asr_start and tiny partials to avoid accidental self-interrupt in delegate mode.
+        if (eventType === 'asr_start') {
+          return;
+        }
+        if ((text?.trim().length ?? 0) < 2) {
+          return;
+        }
+      }
       providers.observability.log('info', 'android barge-in detected while speaking', {
         eventType,
       });
       void performAndroidDialogInterrupt('barge_in');
     },
-    [useAndroidDialogRuntime, isVoiceActive, performAndroidDialogInterrupt, providers.observability],
+    [
+      isVoiceActive,
+      performAndroidDialogInterrupt,
+      providers.observability,
+      replyChainMode,
+      useAndroidDialogRuntime,
+    ],
   );
 
   const handleAndroidDialogEvent = useCallback(
@@ -1263,9 +1305,21 @@ export function useTextChat(): UseTextChatResult {
           if (isVoiceInputMutedRef.current) {
             return;
           }
-          maybeInterruptOnBargeIn('asr_start');
-          if (realtimeCallPhaseRef.current !== 'speaking') {
+          const wasSpeaking = realtimeCallPhaseRef.current === 'speaking';
+          if (replyChainMode === 'custom_llm') {
+            // Re-arm client-triggered TTS every user turn to avoid stale mode across rounds.
+            androidDialogClientTtsEnabledRef.current = false;
+            androidDialogClientTtsArmingRef.current = false;
+            // Reset per-turn platform-reply leak guard before any early return path.
+            androidObservedPlatformReplyInCustomRef.current = false;
+          }
+          maybeInterruptOnBargeIn({ eventType: 'asr_start' });
+          if (!wasSpeaking) {
             androidDialogInterruptedRef.current = false;
+          }
+          if (replyChainMode === 'custom_llm' && wasSpeaking && !androidDialogInterruptedRef.current) {
+            armAndroidClientTriggeredTtsInBackground('asr_start');
+            return;
           }
           setLiveUserTranscript('');
           setPendingAssistantReply('');
@@ -1273,7 +1327,6 @@ export function useTextChat(): UseTextChatResult {
           if (!androidDialogConversationIdRef.current && activeConversationId) {
             androidDialogConversationIdRef.current = activeConversationId;
           }
-          androidObservedPlatformReplyInCustomRef.current = false;
           if (replyChainMode === 'custom_llm') {
             armAndroidClientTriggeredTtsInBackground('asr_start');
           }
@@ -1287,7 +1340,7 @@ export function useTextChat(): UseTextChatResult {
           if (isVoiceInputMutedRef.current) {
             return;
           }
-          maybeInterruptOnBargeIn('asr_partial');
+          maybeInterruptOnBargeIn({ eventType: 'asr_partial', text: event.text });
           if (!voiceLoopActiveRef.current) {
             return;
           }
@@ -1639,7 +1692,7 @@ export function useTextChat(): UseTextChatResult {
             }
           }
           if (!playedByS2SVoice) {
-            await providers.audio.speak(assistantText);
+            setConnectivityHint('文本已生成，S2S语音播报不可用。');
           }
         } else {
           await providers.audio.speak(assistantText);

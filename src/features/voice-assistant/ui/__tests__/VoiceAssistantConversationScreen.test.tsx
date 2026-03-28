@@ -218,4 +218,220 @@ describe('VoiceAssistantConversationScreen', () => {
       expect(onChangeMode).toHaveBeenCalledWith('text');
     });
   });
+
+  it('stops active voice capture when leaving voice mode', async () => {
+    const session = createSession();
+    session.isVoiceActive = true;
+    const onChangeMode = jest.fn();
+
+    const view = renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="voice"
+        onChangeMode={onChangeMode}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="text"
+          onChangeMode={onChangeMode}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(session.toggleVoice).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('re-enables voice when a delayed stop resolves after switching back to voice mode', async () => {
+    const session = createSession();
+    session.isVoiceActive = true;
+
+    let resolveFirstToggle: (() => void) | null = null;
+    const firstTogglePromise = new Promise<void>((resolve) => {
+      resolveFirstToggle = resolve;
+    });
+    const toggleVoice = jest
+      .fn()
+      .mockImplementationOnce(() => firstTogglePromise)
+      .mockResolvedValue(undefined);
+    session.toggleVoice = toggleVoice;
+
+    const view = renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="voice"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="text"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(toggleVoice).toHaveBeenCalledTimes(1);
+    });
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="voice"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    expect(toggleVoice).toHaveBeenCalledTimes(1);
+    resolveFirstToggle?.();
+    await Promise.resolve();
+
+    session.isVoiceActive = false;
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="voice"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(toggleVoice).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('queues a stop when leaving voice mode while startup toggle is still in flight', async () => {
+    const session = createSession();
+    session.isVoiceActive = false;
+
+    let resolveStartToggle: (() => void) | null = null;
+    const startTogglePromise = new Promise<void>((resolve) => {
+      resolveStartToggle = resolve;
+    });
+    const toggleVoice = jest
+      .fn()
+      .mockImplementationOnce(() => startTogglePromise)
+      .mockResolvedValue(undefined);
+    session.toggleVoice = toggleVoice;
+
+    const view = renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="text"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="voice"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(toggleVoice).toHaveBeenCalledTimes(1);
+    });
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="text"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    expect(toggleVoice).toHaveBeenCalledTimes(1);
+    session.isVoiceActive = true;
+    resolveStartToggle?.();
+    await Promise.resolve();
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="text"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(toggleVoice).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('auto-starts voice after active conversation becomes available', async () => {
+    const session = createSession();
+    session.activeConversationId = null;
+    session.isVoiceActive = false;
+    const toggleVoice = jest.fn().mockResolvedValue(undefined);
+    session.toggleVoice = toggleVoice;
+
+    const view = renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="text"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="voice"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    expect(toggleVoice).toHaveBeenCalledTimes(0);
+
+    session.activeConversationId = 'conv-1';
+    view.rerender(
+      <SafeAreaProvider>
+        <VoiceAssistantConversationScreen
+          session={session}
+          mode="voice"
+          onChangeMode={jest.fn()}
+          onOpenDrawer={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+
+    await waitFor(() => {
+      expect(toggleVoice).toHaveBeenCalledTimes(1);
+    });
+  });
 });
