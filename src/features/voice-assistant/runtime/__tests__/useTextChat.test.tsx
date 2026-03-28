@@ -70,6 +70,8 @@ jest.mock('../providers', () => ({
 jest.mock('../../config/env', () => ({
   readVoicePipelineMode: () => 'realtime_audio',
   readS2SEnv: () => null,
+  readLLMEnv: () => null,
+  readReplyChainMode: () => 'official_s2s',
   maskSecret: (value: string) => value,
 }));
 

@@ -9,7 +9,9 @@
 - V1 优先可用与可演进，V2 再增强安全与平台化能力。
 - 建立样式 Tokenizer Design，保证视觉语言一致且可扩展。
 - V1 默认采用稳定语音链路：`ASR -> sendTextQuery -> TTS`，实时 PCM 链路保留为实验开关。
-- Android 新阶段切换到官方 Dialog SDK 托管 ASR/TTS/AEC/播放。当前默认对齐官方 `DialogActivity`：使用默认工作模式与平台自动回复；`ReplyProvider` 作为后续接入自有 LLM 的保留扩展点。
+- Android 新阶段切换到官方 Dialog SDK 托管 ASR/TTS/AEC/播放，并采用模式矩阵：
+  - `official_s2s`：`DIALOG_WORK_MODE_DEFAULT`（官方自动回复）
+  - `custom_llm`：`DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`（自定义文本 + client-triggered TTS）
 
 ## 2. 总体架构
 
@@ -178,6 +180,7 @@ Android 平台新增 `DialogEngineProvider`，封装火山 Dialog SDK：
 Android 运行时不再依赖手写 PCM 上下行与本地音频能量推测来完成主要语音闭环。
 在 Android Dialog SDK 模式下，运行时增加插话打断策略：当 `chat_partial` 播报阶段收到新的 `asr_start/asr_partial`，会自动触发 `interruptCurrentDialog()`，保留已展示 assistant 文本，并将状态切回 listening。
 在 Android Dialog SDK 模式下，会话内静音通过 `DIRECTIVE_PAUSE_TALKING / DIRECTIVE_RESUME_TALKING` 实现：仅暂停/恢复麦克风输入，不结束会话与播报输出。
+在 Android Dialog SDK 模式下，主动挂断或强制切换会话模式前，需先把当前 `chat_partial` 草稿写回消息流，避免 `chat_final` 晚到导致“已播报但聊天记录缺失”。
 
 Android SDK 运行前置环境：
 
@@ -188,11 +191,30 @@ Android SDK 运行前置环境：
 
 ## 4.6 ReplyProvider（业务回复来源）
 
-`ReplyProvider` 负责“回复文本从哪里来”，与 Android SDK 解耦。当前 Android 默认走平台自动回复，并对齐官方 `DialogActivity` 的默认工作模式；`ReplyProvider` 保留为未来切自有 LLM 的扩展口：
+`ReplyProvider` 负责“回复文本从哪里来”，并与语音合成链路解耦：
 
 - `generateReplyStream(input)`
 
-当前仓库先以默认实现打通本地链路，后续可替换成真实业务 LLM 或服务端接口。这样 Android SDK 负责听和说，业务侧只负责“生成什么内容”。
+当前设计采用“双模式矩阵”，由 `EXPO_PUBLIC_REPLY_CHAIN_MODE` 控制：
+
+1. `official_s2s`
+- 聊天模式文本回复走 Android Dialog/S2S 官方链路（`sendTextQuery`）
+- 语音模式走官方一体化链路（ASR + LLM + TTS）
+
+2. `custom_llm`
+- 聊天模式文本回复走 `ReplyProvider(OpenAI-compatible)`
+- 语音模式文本回复仍走 `ReplyProvider(OpenAI-compatible)`，但语音播报必须优先走 S2S voice（Android Dialog `useClientTriggeredTts + streamClientTtsText`）
+- 仅在 S2S voice 播报失败时，允许本地 TTS 兜底，避免整轮静默
+- `custom_llm` 严格模式下，不回退官方自动回复文本链路；即使本轮 `useClientTriggeredTts` 失败，也应继续生成并落库 custom LLM 文本，避免“只有失败提示没有回复内容”
+- 自定义语音会话在 prepare 阶段必须把 Android Dialog 设为 `DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`，否则 `useClientTriggeredTts` / `streamClientTtsText` 可能报 `400060` 且回落官方默认播报
+- 每轮在 `asr_start` 阶段选择 `useClientTriggeredTts`；`session_ready` 仅用于会话就绪标记，不再作为主切换点
+- 当 SDK 不支持 `DIRECTIVE_CANCEL_CURRENT_DIALOG` 时（返回 `Directive unsupported`），不应依赖“中途打断官方播报”兜底，必须前置确保 delegate + client-triggered 生效
+- 语音回合文本持久化采用“可用即落库”原则：若流式回复被下一轮抢占（generation preemption）或中途异常，已生成的 assistant 文本片段仍需写入会话消息，避免出现“用户听到了播报但聊天记录为空”
+
+这个边界保证了：
+
+- 自定义 LLM 能替换“回复内容”
+- 同时不丢 S2S 的 voice 能力（音色/可控性）
 
 ## 4.5 Style Tokenizer（样式令牌体系）
 

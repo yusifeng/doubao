@@ -13,6 +13,7 @@ type VoiceAssistantIconName =
   | 'retry'
   | 'camera'
   | 'mic'
+  | 'mic_off'
   | 'plus'
   | 'search'
   | 'edit'
@@ -134,6 +135,16 @@ export function VoiceAssistantIcon({
           <Path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" {...common} />
           <Path d="M12 17v3" {...common} />
           <Path d="M9 20h6" {...common} />
+        </Svg>
+      );
+    case 'mic_off':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x="9" y="4" width="6" height="10" rx="3" {...common} />
+          <Path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" {...common} />
+          <Path d="M12 17v3" {...common} />
+          <Path d="M9 20h6" {...common} />
+          <Path d="M5 5l14 14" stroke={color} strokeWidth={strokeWidth + 0.8} strokeLinecap="round" />
         </Svg>
       );
     case 'plus':

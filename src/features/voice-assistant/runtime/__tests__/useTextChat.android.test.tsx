@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { useTextChat } from '../useTextChat';
 
-const mockDialogPrepare = jest.fn<Promise<void>, []>();
+const mockDialogPrepare = jest.fn<Promise<void>, [Record<string, unknown>?]>();
 const mockDialogStartConversation = jest.fn<Promise<void>, [unknown]>();
 const mockDialogStopConversation = jest.fn<Promise<void>, []>();
 const mockDialogPauseTalking = jest.fn<Promise<void>, []>();
@@ -80,6 +80,8 @@ jest.mock('../../config/env', () => ({
     accessToken: 'test-access-token',
     wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
   }),
+  readLLMEnv: () => null,
+  readReplyChainMode: () => 'official_s2s',
   maskSecret: (value: string) => value,
 }));
 
@@ -123,6 +125,7 @@ describe('useTextChat android dialog sdk flow', () => {
     });
 
     expect(mockDialogPrepare).toHaveBeenCalledTimes(1);
+    expect(mockDialogPrepare).toHaveBeenCalledWith({ dialogWorkMode: 'default' });
     expect(mockDialogStartConversation).toHaveBeenCalledTimes(1);
     expect(mockDialogSendTextQuery).toHaveBeenCalledWith('测试文字模式');
     expect(result.current.messages.some((message) => message.role === 'user' && message.content === '测试文字模式')).toBe(true);
@@ -183,6 +186,62 @@ describe('useTextChat android dialog sdk flow', () => {
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '这是服务端回复')).toBe(true);
       expect(result.current.voiceRuntimeHint).toBe('正在听你说');
     });
+  });
+
+  it('persists streamed assistant draft when hanging up before chat_final arrives', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-hangup-draft');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这条回复已播报但尚未收到final事件', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toBe('这条回复已播报但尚未收到final事件');
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isVoiceActive).toBe(false);
+      expect(result.current.pendingAssistantReply).toBe('');
+      expect(
+        result.current.messages.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content === '这条回复已播报但尚未收到final事件',
+        ),
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这条回复已播报但尚未收到final事件',
+        sessionId: 'voice-session-hangup-draft',
+      });
+    });
+
+    const persistedDraftMessages = result.current.messages.filter(
+      (message) =>
+        message.role === 'assistant' &&
+        message.content === '这条回复已播报但尚未收到final事件',
+    );
+    expect(persistedDraftMessages).toHaveLength(1);
   });
 
   it('finalizes assistant text from streamed partial deltas even when chat_final text is empty', async () => {
@@ -784,6 +843,77 @@ describe('useTextChat android dialog sdk flow', () => {
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '当前会话回复')).toBe(true);
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '旧会话回复')).toBe(false);
     });
+  });
+
+  it('persists interrupted assistant draft to the original conversation after switching sessions', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    const originalConversationId = result.current.activeConversationId as string;
+    let anotherConversationId = '';
+
+    await act(async () => {
+      anotherConversationId = await result.current.createConversation('另一个会话');
+    });
+
+    await act(async () => {
+      await result.current.selectConversation(originalConversationId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).toBe(originalConversationId);
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      emitEngineStart('voice-session-draft-owner');
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-draft-owner' });
+      mockDialogListener?.({
+        type: 'chat_partial',
+        text: '原会话草稿回复',
+        sessionId: 'voice-session-draft-owner',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingAssistantReply).toContain('原会话草稿回复');
+    });
+
+    await act(async () => {
+      await result.current.selectConversation(anotherConversationId);
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      await result.current.selectConversation(originalConversationId);
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '原会话草稿回复',
+        ),
+      ).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.selectConversation(anotherConversationId);
+    });
+
+    expect(
+      result.current.messages.some(
+        (message) => message.role === 'assistant' && message.content === '原会话草稿回复',
+      ),
+    ).toBe(false);
   });
 
   it('ignores stale engine_stop events from a previous android dialog session', async () => {

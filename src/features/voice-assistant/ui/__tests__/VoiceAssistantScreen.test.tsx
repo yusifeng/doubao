@@ -29,6 +29,7 @@ function createSession(): UseTextChatResult {
     toggleVoiceInputMuted: jest.fn().mockResolvedValue(undefined),
     interruptVoiceOutput: jest.fn().mockResolvedValue(undefined),
     voiceModeLabel: 'Android Dialog SDK 模式（服务端自动回复）',
+    textReplySourceLabel: '文本回复来源：官方S2S（Dialog SDK）',
     voiceToggleLabel: '开始通话',
     voiceRuntimeHint: '实时通话未开启',
     connectivityHint: '尚未测试连接',
@@ -60,7 +61,8 @@ describe('VoiceAssistantScreen', () => {
     expect(await screen.findByText('内容由 AI 生成')).toBeTruthy();
     expect(screen.queryByText('最近消息')).toBeNull();
     expect(screen.queryByText(/当前会话正在持续收听/)).toBeNull();
-    expect(screen.getByText('正在听...')).toBeTruthy();
+    expect(screen.getByText('点击麦克风开始通话')).toBeTruthy();
+    expect(screen.getByText('开始通话')).toBeTruthy();
   });
 
   it('supports muting and unmuting voice input from the first control', async () => {
@@ -172,6 +174,6 @@ describe('VoiceAssistantScreen', () => {
     expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
     expect(await screen.findByText('豆包你好。')).toBeTruthy();
     expect(screen.getByText('你好呀，今天有什么想聊的吗？')).toBeTruthy();
-    expect(screen.queryByText('正在听...')).toBeTruthy();
+    expect(screen.queryByText('点击麦克风开始通话')).toBeTruthy();
   });
 });

@@ -20,6 +20,8 @@ describe('createVoiceAssistantProviders platform routing', () => {
         accessToken: 'test-access-token',
         wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
       }),
+      readLLMEnv: () => null,
+      readReplyChainMode: () => 'official_s2s',
     }));
     jest.doMock('../../../../core/providers/audio/expoRealtime', () => ({
       ExpoRealtimeAudioProvider: class ExpoRealtimeAudioProvider {},
@@ -53,6 +55,8 @@ describe('createVoiceAssistantProviders platform routing', () => {
         accessToken: 'test-access-token',
         wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
       }),
+      readLLMEnv: () => null,
+      readReplyChainMode: () => 'official_s2s',
     }));
 
     jest.isolateModules(() => {

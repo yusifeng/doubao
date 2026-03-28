@@ -40,17 +40,32 @@ function VoiceAssistantScreenContent({
   const isAssistantSpeaking = session.status === 'speaking';
   const isVoiceInputMuted = session.isVoiceInputMuted;
   const statusText = useMemo(() => {
+    if (!isVoiceRunning) {
+      return '点击麦克风开始通话';
+    }
     if (isVoiceInputMuted) {
       return '你已静音';
     }
     if (isAssistantSpeaking) {
-      return '说话或者点击打断';
+      return '助手播报中，点击麦克风可打断';
     }
-    return '正在听...';
-  }, [isAssistantSpeaking, isVoiceInputMuted]);
+    return '正在听你说话';
+  }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning]);
+  const micActionLabel = useMemo(() => {
+    if (isAssistantSpeaking) {
+      return '打断播报';
+    }
+    if (!isVoiceRunning) {
+      return '开始通话';
+    }
+    if (session.supportsVoiceInputMute) {
+      return isVoiceInputMuted ? '恢复收音' : '静音收音';
+    }
+    return '结束通话';
+  }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning, session.supportsVoiceInputMute]);
   const dialogueLines = useMemo<DialogueLine[]>(() => {
     const baseLines: DialogueLine[] = session.messages
-      .slice(-4)
+      .slice(-12)
       .map<DialogueLine>((message) => ({
         id: message.id,
         text: message.content.trim(),
@@ -65,7 +80,6 @@ function VoiceAssistantScreenContent({
         text: session.pendingAssistantReply.trim(),
         role: 'assistant',
       });
-      return lines.slice(-4);
     }
 
     if (session.liveUserTranscript.trim()) {
@@ -74,19 +88,25 @@ function VoiceAssistantScreenContent({
         text: session.liveUserTranscript.trim(),
         role: 'user',
       });
-      return lines.slice(-4);
     }
 
-    return baseLines;
+    return lines.slice(-12);
   }, [session.liveUserTranscript, session.messages, session.pendingAssistantReply]);
 
   useEffect(() => {
-    if (!autoStartOnMount || autoStartedRef.current || session.isVoiceActive) {
+    if (
+      !autoStartOnMount ||
+      autoStartedRef.current ||
+      session.isVoiceActive ||
+      !session.activeConversationId
+    ) {
       return;
     }
     autoStartedRef.current = true;
-    void session.toggleVoice();
-  }, [autoStartOnMount, session]);
+    void session.toggleVoice().catch(() => {
+      autoStartedRef.current = false;
+    });
+  }, [autoStartOnMount, session.activeConversationId, session.isVoiceActive, session.toggleVoice]);
 
   const handleMicControl = async () => {
     if (isAssistantSpeaking) {
@@ -219,9 +239,11 @@ function VoiceAssistantScreenContent({
               className={
                 isAssistantSpeaking
                   ? voiceAssistantVoiceThemeClass.controlShellSpeaking
-                  : isVoiceRunning && !isVoiceInputMuted
-                  ? voiceAssistantVoiceThemeClass.controlShell
-                  : voiceAssistantVoiceThemeClass.controlShellMuted
+                  : !isVoiceRunning
+                  ? voiceAssistantVoiceThemeClass.controlShellIdle
+                  : session.supportsVoiceInputMute && isVoiceInputMuted
+                  ? voiceAssistantVoiceThemeClass.controlShellMuted
+                  : voiceAssistantVoiceThemeClass.controlShell
               }
               onPress={() => {
                 void handleMicControl();
@@ -229,10 +251,20 @@ function VoiceAssistantScreenContent({
               testID="voice-toggle-button"
             >
               <VoiceAssistantIcon
-                name={isAssistantSpeaking ? 'close' : 'mic'}
+                name={
+                  isAssistantSpeaking
+                    ? 'close'
+                    : isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
+                    ? 'mic_off'
+                    : 'mic'
+                }
                 size={26}
                 color={
-                  isAssistantSpeaking ? '#FFFFFF' : isVoiceRunning && !isVoiceInputMuted ? '#111827' : '#FFFFFF'
+                  isAssistantSpeaking
+                    ? '#FFFFFF'
+                    : isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
+                    ? '#EF4444'
+                    : '#111827'
                 }
               />
             </TouchableOpacity>
@@ -263,6 +295,7 @@ function VoiceAssistantScreenContent({
 
           <Text className={voiceAssistantVoiceThemeClass.attribution}>内容由 AI 生成</Text>
         </View>
+        <Text className={voiceAssistantVoiceThemeClass.controlCaption}>{micActionLabel}</Text>
       </View>
     </View>
   );

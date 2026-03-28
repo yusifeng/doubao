@@ -2,6 +2,7 @@ export type DialogConversationInputMode = 'audio' | 'text';
 
 export type DialogEngineEvent =
   | { type: 'engine_start'; sessionId?: string; raw?: string }
+  | { type: 'session_ready'; sessionId?: string; raw?: string }
   | { type: 'engine_stop'; sessionId?: string; raw?: string }
   | { type: 'error'; sessionId?: string; raw?: string; errorCode?: number; errorMessage?: string }
   | { type: 'asr_start'; sessionId?: string; raw?: string }
@@ -15,11 +16,14 @@ export type DialogPrepareConfig = {
   appKey: string;
   accessToken: string;
   wsUrl: string;
+  dialogWorkMode?: DialogWorkMode;
   resourceId?: string;
   uid?: string;
   requestHeaders?: Record<string, string>;
   enableAec?: boolean;
 };
+
+export type DialogWorkMode = 'default' | 'delegate_chat_tts_text';
 
 export type DialogStartConversationConfig = {
   inputMode: DialogConversationInputMode;

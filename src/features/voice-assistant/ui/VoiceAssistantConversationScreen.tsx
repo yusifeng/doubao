@@ -6,6 +6,7 @@ import {
   voiceAssistantThemeStyle,
 } from '../../../core/theme/mappers';
 import type { UseTextChatResult } from '../runtime/useTextChat';
+import type { Message } from '../types/model';
 import { VoiceAssistantMessageBubble } from './VoiceAssistantMessageBubble';
 import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 import { VoiceAssistantScreen } from './VoiceAssistantScreen';
@@ -32,6 +33,23 @@ export function VoiceAssistantConversationScreen({
     () => session.conversations.find((conversation) => conversation.id === session.activeConversationId) ?? null,
     [session.activeConversationId, session.conversations],
   );
+  const pendingAssistantMessage = useMemo<Message | null>(() => {
+    const raw = session.pendingAssistantReply.trim();
+    if (!raw && session.status !== 'thinking') {
+      return null;
+    }
+    if (!session.activeConversationId) {
+      return null;
+    }
+    return {
+      id: 'pending-assistant-reply',
+      conversationId: session.activeConversationId,
+      role: 'assistant',
+      content: raw || '思考中...',
+      type: 'text',
+      createdAt: Date.now(),
+    };
+  }, [session.activeConversationId, session.pendingAssistantReply, session.status]);
 
   const canSend = draft.trim().length > 0;
 
@@ -67,7 +85,7 @@ export function VoiceAssistantConversationScreen({
                 {activeConversation?.title ?? '默认会话'}
               </Text>
               <Text className={voiceAssistantConversationThemeClass.headerSubtext}>
-                {mode === 'voice' ? '语音对话中会继续沿用当前上下文' : '继续和当前角色对话'}
+                {mode === 'voice' ? '语音对话中会继续沿用当前上下文' : session.textReplySourceLabel}
               </Text>
             </View>
             <TouchableOpacity
@@ -96,6 +114,7 @@ export function VoiceAssistantConversationScreen({
           {session.messages.map((message) => (
             <VoiceAssistantMessageBubble key={message.id} message={message} />
           ))}
+          {pendingAssistantMessage ? <VoiceAssistantMessageBubble message={pendingAssistantMessage} /> : null}
         </ScrollView>
 
         <View className={voiceAssistantConversationThemeClass.composerDock}>

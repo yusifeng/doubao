@@ -5,7 +5,15 @@ export type S2SEnvConfig = {
   wsUrl: string;
 };
 
+export type LLMEnvConfig = {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  provider: string;
+};
+
 export type VoicePipelineMode = 'asr_text' | 'realtime_audio';
+export type ReplyChainMode = 'official_s2s' | 'custom_llm';
 
 export function readS2SEnv(): S2SEnvConfig | null {
   const appId = process.env.EXPO_PUBLIC_S2S_APP_ID?.trim() ?? '';
@@ -31,4 +39,23 @@ export function readVoicePipelineMode(): VoicePipelineMode {
     return 'realtime_audio';
   }
   return 'asr_text';
+}
+
+export function readLLMEnv(): LLMEnvConfig | null {
+  const baseUrl = process.env.EXPO_PUBLIC_LLM_BASE_URL?.trim() ?? '';
+  const apiKey = process.env.EXPO_PUBLIC_LLM_API_KEY?.trim() ?? '';
+  const model = process.env.EXPO_PUBLIC_LLM_MODEL?.trim() ?? '';
+  const provider = process.env.EXPO_PUBLIC_LLM_PROVIDER?.trim() ?? 'openai-compatible';
+  if (!baseUrl || !apiKey || !model) {
+    return null;
+  }
+  return { baseUrl, apiKey, model, provider };
+}
+
+export function readReplyChainMode(): ReplyChainMode {
+  const value = process.env.EXPO_PUBLIC_REPLY_CHAIN_MODE?.trim().toLowerCase();
+  if (value === 'custom_llm') {
+    return 'custom_llm';
+  }
+  return 'official_s2s';
 }

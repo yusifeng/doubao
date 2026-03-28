@@ -48,6 +48,12 @@ function normalizeNativeEvent(event: Record<string, unknown>): DialogEngineEvent
         sessionId: typeof event.sessionId === 'string' ? event.sessionId : undefined,
         raw: typeof event.raw === 'string' ? event.raw : undefined,
       };
+    case 'session_ready':
+      return {
+        type,
+        sessionId: typeof event.sessionId === 'string' ? event.sessionId : undefined,
+        raw: typeof event.raw === 'string' ? event.raw : undefined,
+      };
     case 'engine_stop':
       return {
         type,
@@ -134,6 +140,7 @@ export class AndroidDialogEngineProvider implements DialogEngineProvider {
       appId: merged.appId,
       appKey: merged.appKey || DEFAULT_APP_KEY,
       accessToken: merged.accessToken,
+      dialogWorkMode: merged.dialogWorkMode ?? 'default',
       resourceId: merged.resourceId || DEFAULT_RESOURCE_ID,
       address,
       uri,

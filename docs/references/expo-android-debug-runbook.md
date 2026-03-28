@@ -354,6 +354,27 @@ adb logcat -d | rg "capture health|s2s upstream audio|s2s downstream audio|turn 
 
 这时候优先不要怀疑整个项目都坏了。
 
+### 8.6 语音播报有声音，但聊天列表没有对应 assistant 文本
+
+这是语音回合并发抢占的典型现象：
+
+1. 第一轮回复已经开始播报（你能听到声音）
+2. 但在落库前被第二轮抢占（generation preemption）
+3. 若实现没有“抢占前持久化”，就会出现“听到了，但列表没这条”
+
+当前仓库口径（已修复）：
+
+- 语音回合中，已生成的 assistant 文本片段必须“可用即落库”
+- 即使发生抢占或中途异常，也要写入会话消息，避免用户侧状态不一致
+
+排查命令：
+
+```bash
+adb logcat -d | rg "voice-assistant|custom llm voice round failed|android dialog event|asr_final|chat_final" | tail -n 200
+```
+
+若仍复现，优先核对是否跑在最新 JS bundle（`expo start --dev-client --clear --port 8081` 后重新进入 App）。
+
 ---
 
 ## 9. 调试时建议开几个终端
@@ -477,3 +498,100 @@ adb logcat | rg "voice-assistant|s2s|capture health|turn finalized|idle timeout"
 - 服务端 VAD 判停
 
 这三件事共同影响的结果。
+
+---
+
+## 13. 自定义 LLM 路径验证（DeepSeek/OpenAI-compatible）
+
+当前项目的文本回复已接入 `ReplyProvider`，支持用 `.env` 配置 openai-compatible 模型。
+
+回复链路模式（必填）：
+
+```env
+# official_s2s: 官方稳定链路（Android Dialog SDK / S2S 自动回复）
+# custom_llm: 自定义模型链路（openai-compatible 回复）
+EXPO_PUBLIC_REPLY_CHAIN_MODE=custom_llm
+```
+
+最小配置示例：
+
+```env
+EXPO_PUBLIC_LLM_BASE_URL=https://api.deepseek.com/v1
+EXPO_PUBLIC_LLM_API_KEY=sk-xxxx
+EXPO_PUBLIC_LLM_MODEL=deepseek-chat
+EXPO_PUBLIC_LLM_PROVIDER=deepseek
+```
+
+重启 Metro（确保新 env 生效）：
+
+```bash
+pnpm exec expo start -c
+```
+
+在 App 内验证是否走自定义 LLM：
+
+1. 发送一条文本消息；
+2. 查看会话页的连接提示（`connectivityHint`）是否显示：
+   - `回复来源：自定义LLM（<provider> / <model>）`
+
+若没有该提示，说明仍在默认回复路径或环境变量未生效，优先检查：
+
+1. `EXPO_PUBLIC_LLM_*` 是否拼写正确；
+2. `EXPO_PUBLIC_LLM_MODEL` 是否为供应商真实模型 ID（例如 DeepSeek 使用 `deepseek-chat`，不要写 `deepseek/deepseek-chat`）；
+3. 是否已经完全重启过 Expo 进程。
+
+模式建议：
+
+1. 追求最稳表现：`EXPO_PUBLIC_REPLY_CHAIN_MODE=official_s2s`
+2. 需要自定义模型：`EXPO_PUBLIC_REPLY_CHAIN_MODE=custom_llm`
+
+---
+
+## 14. 模式矩阵（最终口径）
+
+本节是当前仓库的统一语义，避免“同一个模式下链路混用”。
+
+### 14.1 `official_s2s`（非自定义 LLM）
+
+聊天模式（文字）：
+
+- 用户输入文本 -> Android Dialog/S2S 文本链路（`sendTextQuery`）-> 服务端 `chat_partial/chat_final` -> 前端消息列表
+- 默认不主动自动朗读（除非后续单独加“文本自动播报”产品开关）
+
+语音模式：
+
+- 官方一体化链路：ASR + LLM + TTS 都在 S2S/Dialog SDK 内完成
+- 插话打断、静音/恢复、会话生命周期都走官方能力
+
+### 14.2 `custom_llm`（自定义模型）
+
+聊天模式（文字）：
+
+- 用户输入文本 -> `ReplyProvider(OpenAI-compatible)` -> 文本消息渲染
+- 不播放语音
+
+语音模式：
+
+- 先识别用户语音得到文本（ASR）
+- 回复文本来自自定义 LLM（`ReplyProvider`）
+- 助手播报必须优先走 S2S voice（Android Dialog `client-triggered tts`）
+- Android 引擎初始化必须使用 `DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`；否则 `useClientTriggeredTts` / `ChatTtsText` 指令可能报 `400060` 并回落官方默认回复音频
+- 每轮在 `asr_start` 阶段选择 `useClientTriggeredTts`，`session_ready` 只做会话就绪标记
+- 若 S2S voice 切换失败（如 400060），本轮仍必须保留 custom LLM 文本落库；并优先打断官方播报，避免用户听到“官方脑子”的回复
+
+排障判据（重要）：
+
+- `asr_start` 后应尽快看到 `Get directive: 4000`（切到 client-triggered TTS）
+- 若只看到 `1000/2001`（start/stop）且出现 `351/359`（平台 chat 回复），说明本轮仍是官方回复链路，custom LLM 未接管成功
+- 若出现 `Get message event: 350` 且 `tts_type: \"default\"`，说明正在播放官方默认音频；custom 语音接管失败
+- 此时优先检查：
+  1. Native prepare 是否设置 `PARAMS_KEY_DIALOG_WORK_MODE_INT = DIALOG_WORK_MODE_DELEGATE_CHAT_TTS_TEXT`
+  2. JS 侧是否收到并处理了 `asr_start`
+  3. `useClientTriggeredTts` 是否报 `400060`（常见于模式未切到 delegate）
+  4. `asr_final` 后是否真正进入 `runAndroidReplyFlow` 并落库 custom 文本
+  5. `interruptCurrentDialog` 是否返回 `Directive unsupported`（该情况下不能依赖打断兜底）
+
+### 14.3 为什么这样分
+
+- `official_s2s`：追求端到端稳定和官方完整能力
+- `custom_llm`：允许替换“内容大脑”，但不放弃 S2S 的 voice 能力（音色/可控性）
