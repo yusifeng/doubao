@@ -16,6 +16,7 @@ import {
   validateRuntimeConfigForSave,
 } from '../runtimeConfigRepo';
 import { readRuntimeConfigFromEnv } from '../runtimeConfig';
+import { VOICE_ASSISTANT_S2S_WS_URL } from '../constants';
 
 const mockAsyncStorage = {
   getItem: jest.fn<Promise<string | null>, [string]>(),
@@ -38,7 +39,6 @@ describe('runtimeConfigRepo', () => {
       EXPO_PUBLIC_REPLY_CHAIN_MODE: 'official_s2s',
       EXPO_PUBLIC_S2S_APP_ID: 'env-app-id',
       EXPO_PUBLIC_S2S_ACCESS_TOKEN: 'env-access-token',
-      EXPO_PUBLIC_S2S_WS_URL: 'wss://env.example.com/dialogue',
       EXPO_PUBLIC_S2S_APP_KEY: 'env-app-key',
       EXPO_PUBLIC_LLM_BASE_URL: 'https://env.llm/v1',
       EXPO_PUBLIC_LLM_API_KEY: 'env-llm-api-key',
@@ -72,7 +72,6 @@ describe('runtimeConfigRepo', () => {
         },
         s2s: {
           appId: 'stored-app-id',
-          wsUrl: 'wss://stored.example.com/dialogue',
         },
         voice: {
           speakerId: 'custom_voice_id_1',
@@ -106,7 +105,7 @@ describe('runtimeConfigRepo', () => {
     expect(config.s2s).toEqual({
       appId: 'stored-app-id',
       accessToken: 'stored-access-token',
-      wsUrl: 'wss://stored.example.com/dialogue',
+      wsUrl: VOICE_ASSISTANT_S2S_WS_URL,
     });
     expect(config.androidDialog.appKeyOverride).toBe('stored-android-app-key');
     expect(config.voice.speakerId).toBe('custom_voice_id_1');
@@ -125,7 +124,6 @@ describe('runtimeConfigRepo', () => {
       s2s: {
         appId: 'save-app-id',
         accessToken: 'save-access-token',
-        wsUrl: 'wss://save.example.com/dialogue',
       },
       androidDialog: {
         appKeyOverride: 'save-app-key',

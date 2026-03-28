@@ -1,4 +1,5 @@
 describe('createVoiceAssistantProviders platform routing', () => {
+  const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
   const originalNodeEnv = process.env.NODE_ENV;
   const originalWebSocket = global.WebSocket;
   const runtimeConfig = {
@@ -12,7 +13,11 @@ describe('createVoiceAssistantProviders platform routing', () => {
     s2s: {
       appId: '7948119309',
       accessToken: 'test-access-token',
-      wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+      wsUrl: DEFAULT_S2S_WS_URL,
+    },
+    persona: {
+      systemPrompt: 'default prompt',
+      source: 'default' as const,
     },
     androidDialog: {
       appKeyOverride: 'test-app-key',

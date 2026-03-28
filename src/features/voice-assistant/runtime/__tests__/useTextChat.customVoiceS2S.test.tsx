@@ -19,6 +19,7 @@ const mockDialogSetListener = jest.fn<
 >();
 const mockReplyGenerateReplyStream = jest.fn();
 let mockDialogListener: ((event: { type: string; text?: string; sessionId?: string }) => void) | null = null;
+const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
   replyChainMode: 'custom_llm' as const,
   llm: {
@@ -30,7 +31,11 @@ const runtimeConfig = {
   s2s: {
     appId: '7948119309',
     accessToken: 'test-access-token',
-    wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+    wsUrl: DEFAULT_S2S_WS_URL,
+  },
+  persona: {
+    systemPrompt: 'default prompt',
+    source: 'default' as const,
   },
   androidDialog: {
     appKeyOverride: 'test-app-key',
@@ -101,7 +106,6 @@ jest.mock('../../config/env', () => ({
     appId: '7948119309',
     appKey: 'test-app-key',
     accessToken: 'test-access-token',
-    wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
   }),
   readLLMEnv: () => ({
     baseUrl: 'https://api.deepseek.com/v1',

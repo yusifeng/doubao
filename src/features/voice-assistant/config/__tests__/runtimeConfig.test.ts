@@ -18,6 +18,10 @@ describe('runtimeConfig', () => {
         accessToken: undefined,
         wsUrl: undefined,
       },
+      persona: {
+        systemPrompt: undefined,
+        source: undefined,
+      },
       androidDialog: {
         appKeyOverride: undefined,
       },
@@ -31,6 +35,8 @@ describe('runtimeConfig', () => {
     expect(merged.s2s.appId).toBe(base.s2s.appId);
     expect(merged.s2s.accessToken).toBe(base.s2s.accessToken);
     expect(merged.s2s.wsUrl).toBe(base.s2s.wsUrl);
+    expect(merged.persona.systemPrompt).toBe(base.persona.systemPrompt);
+    expect(merged.persona.source).toBe(base.persona.source);
     expect(merged.androidDialog.appKeyOverride).toBe(base.androidDialog.appKeyOverride);
     expect(merged.voice.speakerId).toBe(base.voice.speakerId);
   });

@@ -10,6 +10,7 @@ export type Conversation = {
   lastMessage: string;
   updatedAt: number;
   status: ConversationStatus;
+  systemPromptSnapshot?: string;
 };
 
 export type Message = {

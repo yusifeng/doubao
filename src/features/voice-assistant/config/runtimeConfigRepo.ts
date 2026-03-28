@@ -51,8 +51,8 @@ type StoredRuntimeConfig = {
   };
   s2s?: {
     appId?: string;
-    wsUrl?: string;
   };
+  persona?: RuntimeConfig['persona'];
   voice?: RuntimeConfig['voice'];
 };
 
@@ -113,8 +113,8 @@ export async function getEffectiveRuntimeConfig(): Promise<RuntimeConfig> {
     s2s: {
       appId: stored.s2s?.appId,
       accessToken: s2sAccessToken || undefined,
-      wsUrl: stored.s2s?.wsUrl,
     },
+    persona: stored.persona,
     androidDialog: {
       appKeyOverride: androidAppKey || undefined,
     },
@@ -132,8 +132,8 @@ export async function saveRuntimeConfig(nextConfig: RuntimeConfig): Promise<Runt
     },
     s2s: {
       appId: nextConfig.s2s.appId,
-      wsUrl: nextConfig.s2s.wsUrl,
     },
+    persona: nextConfig.persona,
     voice: nextConfig.voice,
   });
 

@@ -1,6 +1,8 @@
 import {
   VOICE_ASSISTANT_DIALOG_SPEAKER,
+  VOICE_ASSISTANT_S2S_WS_URL,
 } from './constants';
+import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
 import {
   readLLMEnv,
   readReplyChainMode,
@@ -33,6 +35,10 @@ export type RuntimeConfig = {
   replyChainMode: ReplyChainMode;
   llm: RuntimeLLMConfig;
   s2s: RuntimeS2SConfig;
+  persona: {
+    systemPrompt: string;
+    source: 'default' | 'custom';
+  };
   androidDialog: {
     appKeyOverride: string;
   };
@@ -47,6 +53,7 @@ export type RuntimeConfigDraft = Partial<{
   replyChainMode: ReplyChainMode;
   llm: Partial<RuntimeLLMConfig>;
   s2s: Partial<RuntimeS2SConfig>;
+  persona: Partial<RuntimeConfig['persona']>;
   androidDialog: Partial<RuntimeConfig['androidDialog']>;
   voice: Partial<RuntimeConfig['voice']>;
 }>;
@@ -93,7 +100,11 @@ export function readRuntimeConfigFromEnv(): RuntimeConfig {
     s2s: {
       appId: envS2S?.appId ?? '',
       accessToken: envS2S?.accessToken ?? '',
-      wsUrl: envS2S?.wsUrl ?? '',
+      wsUrl: VOICE_ASSISTANT_S2S_WS_URL,
+    },
+    persona: {
+      systemPrompt: KONAN_CHARACTER_MANIFEST,
+      source: 'default',
     },
     androidDialog: {
       appKeyOverride: envS2S?.appKey ?? '',
@@ -112,6 +123,7 @@ export function mergeRuntimeConfig(base: RuntimeConfig, draft?: RuntimeConfigDra
   }
   const nextLLM = draft.llm ?? {};
   const nextS2S = draft.s2s ?? {};
+  const nextPersona = draft.persona ?? {};
   const nextAndroidDialog = draft.androidDialog ?? {};
   const nextVoice = draft.voice ?? {};
 
@@ -126,7 +138,11 @@ export function mergeRuntimeConfig(base: RuntimeConfig, draft?: RuntimeConfigDra
     s2s: {
       appId: nextS2S.appId ?? base.s2s.appId,
       accessToken: nextS2S.accessToken ?? base.s2s.accessToken,
-      wsUrl: nextS2S.wsUrl ?? base.s2s.wsUrl,
+      wsUrl: base.s2s.wsUrl,
+    },
+    persona: {
+      systemPrompt: nextPersona.systemPrompt ?? base.persona.systemPrompt,
+      source: nextPersona.source ?? base.persona.source,
     },
     androidDialog: {
       appKeyOverride: nextAndroidDialog.appKeyOverride ?? base.androidDialog.appKeyOverride,
@@ -144,13 +160,13 @@ export function isCompleteLLMConfig(llm: RuntimeLLMConfig): boolean {
 }
 
 export function isCompleteS2SConfig(s2s: RuntimeS2SConfig): boolean {
-  return Boolean((s2s.appId ?? '').trim() && (s2s.accessToken ?? '').trim() && (s2s.wsUrl ?? '').trim());
+  return Boolean((s2s.appId ?? '').trim() && (s2s.accessToken ?? '').trim());
 }
 
 export function validateRuntimeConfig(config: RuntimeConfig): string[] {
   const errors: string[] = [];
   if (!isCompleteS2SConfig(config.s2s)) {
-    errors.push('S2S 配置缺少 App ID / Access Token / WS URL。');
+    errors.push('S2S 配置缺少 App ID / Access Token。');
   }
   if (config.replyChainMode === 'custom_llm' && !isCompleteLLMConfig(config.llm)) {
     errors.push('当前选择了 custom_llm，请补全 Base URL / API Key / Model。');
@@ -170,7 +186,8 @@ export function isRuntimeConfigEqual(left: RuntimeConfig, right: RuntimeConfig):
     left.llm.provider === right.llm.provider &&
     left.s2s.appId === right.s2s.appId &&
     left.s2s.accessToken === right.s2s.accessToken &&
-    left.s2s.wsUrl === right.s2s.wsUrl &&
+    left.persona.systemPrompt === right.persona.systemPrompt &&
+    left.persona.source === right.persona.source &&
     left.androidDialog.appKeyOverride === right.androidDialog.appKeyOverride &&
     left.voice.speakerId === right.voice.speakerId &&
     left.voice.speakerLabel === right.voice.speakerLabel &&

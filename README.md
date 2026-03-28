@@ -33,8 +33,9 @@ pnpm exec tsc --noEmit
 
 - `EXPO_PUBLIC_S2S_ACCESS_TOKEN`
 - `EXPO_PUBLIC_S2S_APP_ID`
-- `EXPO_PUBLIC_S2S_WS_URL`
 - `EXPO_PUBLIC_VOICE_PIPELINE_MODE`
+
+说明：S2S 的 WS 地址固定使用内置 SC2.0 地址，不再通过环境变量配置。
 
 ## 文档入口
 

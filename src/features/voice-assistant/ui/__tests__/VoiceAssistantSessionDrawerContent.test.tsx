@@ -52,6 +52,10 @@ function createSession(): UseTextChatResult {
         accessToken: 'token',
         wsUrl: 'wss://example.com/realtime/dialogue',
       },
+      persona: {
+        systemPrompt: 'default prompt',
+        source: 'default',
+      },
       androidDialog: {
         appKeyOverride: '',
       },

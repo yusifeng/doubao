@@ -2,7 +2,6 @@ export type S2SEnvConfig = {
   appId: string;
   appKey: string;
   accessToken: string;
-  wsUrl: string;
 };
 
 export type LLMEnvConfig = {
@@ -19,11 +18,10 @@ export function readS2SEnv(): S2SEnvConfig | null {
   const appId = process.env.EXPO_PUBLIC_S2S_APP_ID?.trim() ?? '';
   const appKey = process.env.EXPO_PUBLIC_S2S_APP_KEY?.trim() ?? '';
   const accessToken = process.env.EXPO_PUBLIC_S2S_ACCESS_TOKEN?.trim() ?? '';
-  const wsUrl = process.env.EXPO_PUBLIC_S2S_WS_URL?.trim() ?? '';
-  if (!appId || !accessToken || !wsUrl) {
+  if (!appId || !accessToken) {
     return null;
   }
-  return { appId, appKey, accessToken, wsUrl };
+  return { appId, appKey, accessToken };
 }
 
 export function maskSecret(secret: string): string {

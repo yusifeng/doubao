@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type AppToastType = 'info' | 'success' | 'error';
 
@@ -18,6 +19,7 @@ const AppToastContext = createContext<AppToastContextValue>({
 });
 
 function AppToastOverlay({ state }: { state: ToastState }) {
+  const insets = useSafeAreaInsets();
   if (!state.visible || !state.message) {
     return null;
   }
@@ -30,7 +32,11 @@ function AppToastOverlay({ state }: { state: ToastState }) {
       : 'border-slate-200 bg-white text-slate-700';
 
   return (
-    <View pointerEvents="none" className="absolute left-4 right-4 top-4 z-[999] items-center">
+    <View
+      pointerEvents="none"
+      className="absolute left-4 right-4 z-[999] items-center"
+      style={{ top: insets.top + 12 }}
+    >
       <View className={`w-full max-w-[420px] rounded-xl border px-4 py-3 shadow-sm ${colorClass}`}>
         <Text className="text-center text-[13px] font-medium">{state.message}</Text>
       </View>

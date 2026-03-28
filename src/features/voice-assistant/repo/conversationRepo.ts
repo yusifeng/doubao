@@ -1,11 +1,12 @@
 import type { Conversation, Message } from '../types/model';
 
 export interface ConversationRepo {
-  createConversation(title?: string): Promise<Conversation>;
+  createConversation(title?: string, options?: { systemPromptSnapshot?: string }): Promise<Conversation>;
   listConversations(): Promise<Conversation[]>;
   appendMessage(conversationId: string, message: Omit<Message, 'id' | 'createdAt'>): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
   updateConversationStatus(conversationId: string, status: Conversation['status']): Promise<void>;
+  updateConversationSystemPromptSnapshot(conversationId: string, snapshot: string): Promise<void>;
 }
 
 // M1 skeleton: in-memory placeholder, will be replaced by SQLite provider in M5.
@@ -16,7 +17,7 @@ export class InMemoryConversationRepo implements ConversationRepo {
 
   private idSeed = 0;
 
-  async createConversation(title = '新会话'): Promise<Conversation> {
+  async createConversation(title = '新会话', options?: { systemPromptSnapshot?: string }): Promise<Conversation> {
     const now = Date.now();
     const conversation: Conversation = {
       id: this.nextId('conv'),
@@ -24,6 +25,7 @@ export class InMemoryConversationRepo implements ConversationRepo {
       lastMessage: '',
       updatedAt: now,
       status: 'idle',
+      systemPromptSnapshot: options?.systemPromptSnapshot,
     };
     this.conversations = [conversation, ...this.conversations];
     this.messagesByConversation[conversation.id] = [];
@@ -66,6 +68,17 @@ export class InMemoryConversationRepo implements ConversationRepo {
   async updateConversationStatus(conversationId: string, status: Conversation['status']): Promise<void> {
     this.conversations = this.conversations.map((conversation) =>
       conversation.id === conversationId ? { ...conversation, status } : conversation,
+    );
+  }
+
+  async updateConversationSystemPromptSnapshot(conversationId: string, snapshot: string): Promise<void> {
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === conversationId
+        ? {
+            ...conversation,
+            systemPromptSnapshot: snapshot,
+          }
+        : conversation,
     );
   }
 

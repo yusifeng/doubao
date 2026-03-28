@@ -26,6 +26,36 @@
 
 ## Entries
 
+## 2026-03-28 22:48 (Asia/Shanghai) - refactor-settings-routes-and-persona-snapshot
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `app/settings/`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/config/*`
+  - `src/core/providers/reply/*`
+  - `src/features/voice-assistant/repo/conversationRepo.ts`
+  - `src/features/voice-assistant/types/model.ts`
+  - `src/shared/ui/AppToastProvider.tsx`
+  - `README.md`
+  - `.env.example`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+- Summary:
+  - Replaced the single settings page route with nested Expo Router settings subroutes (`reply-mode` / `s2s` / `llm` / `persona`) and introduced shared settings scaffold components.
+  - Added runtime persona config persistence and per-conversation `systemPromptSnapshot`, then wired reply generation to use conversation snapshots instead of a single hardcoded global prompt.
+  - Fixed S2S config contract to use the built-in SC2.0 websocket endpoint (no env override), and updated validation, config repo persistence, and user-facing docs accordingly.
+  - Adjusted toast overlay top offset to safe-area insets and updated related tests for new runtime config shape and settings navigation coverage.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- app/settings/__tests__/settingsRoutes.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts` (pass, 3 suites / 11 tests)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/providers.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx` (pass, 6 suites / 48 tests)
+- Risk:
+  - Settings navigation now depends on nested route stack behavior; drawer-open and back-path UX should continue to be verified on real devices.
+  - Persona snapshot semantics intentionally only affect new conversations; users may perceive old conversations as "not updated" without explicit UI education.
+- Rollback:
+  - Revert the scoped settings/runtime/config/provider/doc files above to restore the previous single settings screen and global hardcoded system prompt behavior.
+
 ## 2026-03-28 00:08 (Asia/Shanghai) - implement-session-level-mute-for-android-dialog
 
 - Commit: pending

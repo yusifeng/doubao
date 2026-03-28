@@ -1,4 +1,3 @@
-import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
 import type { LLMEnvConfig } from '../../../features/voice-assistant/config/env';
 import type { ReplyGenerationInput, ReplyProvider } from './types';
 
@@ -15,7 +14,7 @@ export class OpenAICompatibleReplyProvider implements ReplyProvider {
     try {
       const response = await generateText({
         model: provider.chat(this.config.model),
-        system: KONAN_CHARACTER_MANIFEST,
+        system: input.systemPrompt,
         messages: this.buildMessages(input),
         maxRetries: 1,
         maxOutputTokens: 800,

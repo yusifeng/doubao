@@ -5,6 +5,7 @@ export type ReplyGenerationInput = {
   mode: 'text' | 'voice';
   conversation: Conversation | null;
   messages: Message[];
+  systemPrompt: string;
 };
 
 export interface ReplyProvider {

@@ -189,10 +189,23 @@ function mergeAssistantDraft(currentDraft: string, incomingText: string): string
   return `${currentDraft}${incomingText}`;
 }
 
+function resolveConversationSystemPrompt(
+  conversation: Conversation | null,
+): string {
+  const conversationPrompt = conversation?.systemPromptSnapshot?.trim();
+  if (conversationPrompt) {
+    return conversationPrompt;
+  }
+  return KONAN_CHARACTER_MANIFEST;
+}
+
 export function useTextChat(): UseTextChatResult {
   const isTestEnv = process.env.NODE_ENV === 'test';
   const repo = useMemo(() => new InMemoryConversationRepo(), []);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(() => readRuntimeConfigFromEnv());
+  const [runtimeConfigHydrated, setRuntimeConfigHydrated] = useState(false);
+  const runtimeConfigRef = useRef(runtimeConfig);
+  const runtimeConfigHydratedRef = useRef(runtimeConfigHydrated);
   const providers = useMemo(() => createVoiceAssistantProviders(runtimeConfig), [runtimeConfig]);
   const machine = useSessionMachine();
   const isAndroidDialogMode = Platform.OS === 'android' && providers.dialogEngine.isSupported();
@@ -236,6 +249,7 @@ export function useTextChat(): UseTextChatResult {
   const realtimeSpeechDetectedRef = useRef(false);
   const realtimePostSpeechSilentFramesRef = useRef(0);
   const realtimeListeningStateRef = useRef<RealtimeListeningState>('ready');
+  const hasBootstrappedConversationRef = useRef(false);
   const androidDialogPreparedRef = useRef(false);
   const androidDialogModeRef = useRef<AndroidDialogMode | null>(null);
   const androidDialogInterruptedRef = useRef(false);
@@ -266,13 +280,29 @@ export function useTextChat(): UseTextChatResult {
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
 
   useEffect(() => {
+    runtimeConfigRef.current = runtimeConfig;
+  }, [runtimeConfig]);
+
+  useEffect(() => {
+    runtimeConfigHydratedRef.current = runtimeConfigHydrated;
+  }, [runtimeConfigHydrated]);
+
+  useEffect(() => {
     let mounted = true;
     void (async () => {
-      const nextRuntimeConfig = await getEffectiveRuntimeConfig();
+      let nextRuntimeConfig: RuntimeConfig;
+      try {
+        nextRuntimeConfig = await getEffectiveRuntimeConfig();
+      } catch {
+        nextRuntimeConfig = readRuntimeConfigFromEnv();
+      }
       if (mounted) {
         setRuntimeConfig((current) =>
           isRuntimeConfigEqual(current, nextRuntimeConfig) ? current : nextRuntimeConfig,
         );
+        runtimeConfigRef.current = nextRuntimeConfig;
+        runtimeConfigHydratedRef.current = true;
+        setRuntimeConfigHydrated(true);
       }
     })();
     return () => {
@@ -281,9 +311,19 @@ export function useTextChat(): UseTextChatResult {
   }, []);
 
   useEffect(() => {
+    if (!runtimeConfigHydrated || hasBootstrappedConversationRef.current) {
+      return;
+    }
+    hasBootstrappedConversationRef.current = true;
     let mounted = true;
     async function bootstrap() {
-      const conversation = await repo.createConversation('默认会话');
+      const existingConversations = await repo.listConversations();
+      if (existingConversations.length > 0) {
+        return;
+      }
+      const conversation = await repo.createConversation('默认会话', {
+        systemPromptSnapshot: runtimeConfig.persona.systemPrompt,
+      });
       const allConversations = await repo.listConversations();
       const allMessages = await repo.listMessages(conversation.id);
       if (!mounted) {
@@ -297,7 +337,7 @@ export function useTextChat(): UseTextChatResult {
     return () => {
       mounted = false;
     };
-  }, [repo]);
+  }, [repo, runtimeConfigHydrated, runtimeConfig.persona.systemPrompt]);
 
   useEffect(() => {
     if (replyChainMode !== 'custom_llm' || isCompleteLLMConfig(llmConfig)) {
@@ -336,7 +376,24 @@ export function useTextChat(): UseTextChatResult {
 
   const createConversation = useCallback(
     async (title = '新会话') => {
-      const conversation = await repo.createConversation(title);
+      let systemPromptSnapshot = runtimeConfigRef.current.persona.systemPrompt;
+      if (!runtimeConfigHydratedRef.current) {
+        try {
+          const hydratedRuntimeConfig = await getEffectiveRuntimeConfig();
+          systemPromptSnapshot = hydratedRuntimeConfig.persona.systemPrompt;
+          runtimeConfigRef.current = hydratedRuntimeConfig;
+          runtimeConfigHydratedRef.current = true;
+          setRuntimeConfig((current) =>
+            isRuntimeConfigEqual(current, hydratedRuntimeConfig) ? current : hydratedRuntimeConfig,
+          );
+          setRuntimeConfigHydrated(true);
+        } catch {
+          // Keep env snapshot as a safe fallback when hydration is unavailable.
+        }
+      }
+      const conversation = await repo.createConversation(title, {
+        systemPromptSnapshot,
+      });
       const refreshedConversations = await repo.listConversations();
       const refreshedMessages = await repo.listMessages(conversation.id);
       setActiveConversationId(conversation.id);
@@ -779,7 +836,13 @@ export function useTextChat(): UseTextChatResult {
       const generation = androidReplyGenerationRef.current + 1;
       androidReplyGenerationRef.current = generation;
       const conversation = conversations.find((item) => item.id === targetConversationId) ?? null;
+      if (conversation && !conversation.systemPromptSnapshot?.trim()) {
+        await repo.updateConversationSystemPromptSnapshot(targetConversationId, KONAN_CHARACTER_MANIFEST);
+        setConversations(await repo.listConversations());
+      }
       const currentMessages = await repo.listMessages(targetConversationId);
+      const effectiveSystemPrompt =
+        conversation?.systemPromptSnapshot?.trim() || KONAN_CHARACTER_MANIFEST;
 
       await updateConversationRuntimeStatus('thinking', { refreshConversations: true });
 
@@ -834,6 +897,7 @@ export function useTextChat(): UseTextChatResult {
           mode,
           conversation,
           messages: currentMessages,
+          systemPrompt: effectiveSystemPrompt,
         })) {
           if (generation !== androidReplyGenerationRef.current) {
             if (assistantText.trim()) {
@@ -1443,7 +1507,12 @@ export function useTextChat(): UseTextChatResult {
       fallbackToS2S: boolean;
     }): Promise<string> => {
       const conversation = conversations.find((item) => item.id === conversationId) ?? null;
+      if (conversation && !conversation.systemPromptSnapshot?.trim()) {
+        await repo.updateConversationSystemPromptSnapshot(conversationId, KONAN_CHARACTER_MANIFEST);
+        setConversations(await repo.listConversations());
+      }
       const currentMessages = await repo.listMessages(conversationId);
+      const effectiveSystemPrompt = resolveConversationSystemPrompt(conversation);
       let assistantText = '';
       let emittedChunk = false;
 
@@ -1453,6 +1522,7 @@ export function useTextChat(): UseTextChatResult {
           mode,
           conversation,
           messages: currentMessages,
+          systemPrompt: effectiveSystemPrompt,
         })) {
           if (!chunk) {
             continue;
@@ -2369,6 +2439,7 @@ export function useTextChat(): UseTextChatResult {
               mode: 'text',
               conversation: null,
               messages: [],
+              systemPrompt: runtimeConfig.persona.systemPrompt,
             })) {
               generated += chunk;
               if (generated.trim().length > 0) {
@@ -2399,7 +2470,7 @@ export function useTextChat(): UseTextChatResult {
         ...input,
       };
       if (!isCompleteS2SConfig(s2sConfigToTest)) {
-        const message = '缺少 App ID / Access Token / WS URL';
+        const message = '缺少 App ID / Access Token';
         setConnectivityHint(message);
         return { ok: false, message };
       }

@@ -3,6 +3,38 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantConversationScreen } from '../VoiceAssistantConversationScreen';
 
+jest.mock('../../config/runtimeConfigRepo', () => ({
+  getEffectiveRuntimeConfig: jest.fn(async () => ({
+    replyChainMode: 'official_s2s',
+    llm: {
+      baseUrl: '',
+      apiKey: '',
+      model: '',
+      provider: 'openai-compatible',
+    },
+    s2s: {
+      appId: '',
+      accessToken: '',
+      wsUrl: '',
+    },
+    persona: {
+      systemPrompt: 'default prompt',
+      source: 'default',
+    },
+    androidDialog: {
+      appKeyOverride: '',
+    },
+    voice: {
+      speakerId: 'S_mXRP7Y5M1',
+      speakerLabel: '江户川柯南（默认音色）',
+      sourceType: 'default',
+    },
+  })),
+  saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({ ...currentConfig, ...draft })),
+  validateRuntimeConfigForSave: jest.fn(() => []),
+}));
+
 function createSession(): UseTextChatResult {
   return {
     status: 'idle',
@@ -61,6 +93,10 @@ function createSession(): UseTextChatResult {
         appId: 'app-id',
         accessToken: 'token',
         wsUrl: 'wss://example.com/realtime/dialogue',
+      },
+      persona: {
+        systemPrompt: 'default prompt',
+        source: 'default',
       },
       androidDialog: {
         appKeyOverride: '',

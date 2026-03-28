@@ -186,8 +186,9 @@ Android SDK 运行前置环境：
 
 - `EXPO_PUBLIC_S2S_APP_ID`
 - `EXPO_PUBLIC_S2S_ACCESS_TOKEN`
-- `EXPO_PUBLIC_S2S_WS_URL`
 - `EXPO_PUBLIC_S2S_APP_KEY`（可选；未显式提供时沿用当前 dialog 资源默认 app key）
+
+WS 地址在运行时固定使用内置 SC2.0 地址（不再暴露环境变量配置）。
 
 ## 4.6 ReplyProvider（业务回复来源）
 

@@ -1,6 +1,19 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useTextChat } from '../useTextChat';
 
+function createDeferred<T>() {
+  let resolve: ((value: T) => void) | null = null;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return {
+    promise,
+    resolve: (value: T) => {
+      resolve?.(value);
+    },
+  };
+}
+
 const mockStartCapture = jest.fn<Promise<void>, [((frame: Uint8Array) => Promise<void> | void)?]>();
 const mockStopCapture = jest.fn<Promise<void>, []>();
 const mockStopPlayback = jest.fn<Promise<void>, []>();
@@ -28,6 +41,10 @@ const runtimeConfig = {
     appId: '',
     accessToken: '',
     wsUrl: '',
+  },
+  persona: {
+    systemPrompt: 'persisted persona prompt',
+    source: 'default' as const,
   },
   androidDialog: {
     appKeyOverride: '',
@@ -112,6 +129,10 @@ describe('useTextChat realtime lifecycle lock', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockImplementation(async () => runtimeConfig);
     process.env.NODE_ENV = 'development';
     mockStartCapture.mockImplementation(
       (onFrame) => {
@@ -165,6 +186,78 @@ describe('useTextChat realtime lifecycle lock', () => {
     expect(mockStartCapture).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(result.current.isVoiceActive).toBe(true);
+    });
+  });
+
+  it('bootstraps default conversation with hydrated persona prompt snapshot', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    expect(result.current.conversations[0]?.systemPromptSnapshot).toBe('persisted persona prompt');
+  });
+
+  it('uses hydrated persona snapshot when creating conversation before bootstrap hydration', async () => {
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    const delayedHydration = createDeferred<typeof runtimeConfig>();
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockReset();
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig
+      .mockImplementationOnce(() => delayedHydration.promise)
+      .mockImplementationOnce(async () => ({
+        ...runtimeConfig,
+        persona: {
+          systemPrompt: 'late hydrated persona prompt',
+          source: 'custom' as const,
+        },
+      }));
+
+    const { result } = renderHook(() => useTextChat());
+
+    await act(async () => {
+      await result.current.createConversation('抢先会话');
+    });
+
+    expect(result.current.conversations[0]?.systemPromptSnapshot).toBe('late hydrated persona prompt');
+    delayedHydration.resolve(runtimeConfig);
+  });
+
+  it('does not create default conversation after hydration if user already created one', async () => {
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    const delayedHydration = createDeferred<typeof runtimeConfig>();
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockReset();
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig
+      .mockImplementationOnce(() => delayedHydration.promise)
+      .mockImplementationOnce(async () => ({
+        ...runtimeConfig,
+        persona: {
+          systemPrompt: 'late hydrated persona prompt',
+          source: 'custom' as const,
+        },
+      }));
+
+    const { result } = renderHook(() => useTextChat());
+
+    let createdConversationId = '';
+    await act(async () => {
+      createdConversationId = await result.current.createConversation('抢先会话');
+    });
+    expect(result.current.activeConversationId).toBe(createdConversationId);
+
+    await act(async () => {
+      delayedHydration.resolve(runtimeConfig);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.conversations).toHaveLength(1);
+      expect(result.current.conversations[0]?.title).toBe('抢先会话');
+      expect(result.current.activeConversationId).toBe(createdConversationId);
     });
   });
 
