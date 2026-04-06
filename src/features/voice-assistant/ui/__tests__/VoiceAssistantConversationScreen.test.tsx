@@ -253,9 +253,9 @@ describe('VoiceAssistantConversationScreen', () => {
     const session = createSession();
     session.isVoiceActive = true;
 
-    let resolveFirstToggle: (() => void) | null = null;
+    let resolveFirstToggle: (() => void) | undefined;
     const firstTogglePromise = new Promise<void>((resolve) => {
-      resolveFirstToggle = resolve;
+      resolveFirstToggle = () => resolve();
     });
     const toggleVoice = jest
       .fn()
@@ -323,9 +323,9 @@ describe('VoiceAssistantConversationScreen', () => {
     const session = createSession();
     session.isVoiceActive = false;
 
-    let resolveStartToggle: (() => void) | null = null;
+    let resolveStartToggle: (() => void) | undefined;
     const startTogglePromise = new Promise<void>((resolve) => {
-      resolveStartToggle = resolve;
+      resolveStartToggle = () => resolve();
     });
     const toggleVoice = jest
       .fn()

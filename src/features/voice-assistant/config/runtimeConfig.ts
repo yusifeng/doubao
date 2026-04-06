@@ -174,10 +174,13 @@ export function normalizeRuntimePersonaConfig(
   const requestedActiveRoleId = input?.activeRoleId?.trim();
   const fallbackActiveRoleId =
     input?.source === 'custom' && preferredFallbackRoleId ? preferredFallbackRoleId : null;
-  const activeRole =
-    (requestedActiveRoleId && roles.find((role) => role.id === requestedActiveRoleId)) ??
-    (fallbackActiveRoleId && roles.find((role) => role.id === fallbackActiveRoleId)) ??
-    roles[0];
+  const requestedActiveRole = requestedActiveRoleId
+    ? roles.find((role) => role.id === requestedActiveRoleId)
+    : undefined;
+  const fallbackActiveRole = fallbackActiveRoleId
+    ? roles.find((role) => role.id === fallbackActiveRoleId)
+    : undefined;
+  const activeRole = requestedActiveRole ?? fallbackActiveRole ?? roles[0] ?? createDefaultPersonaRole();
 
   return {
     activeRoleId: activeRole.id,

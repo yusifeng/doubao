@@ -694,3 +694,24 @@
   - Android custom voice path remains sensitive to SDK lifecycle timing; misordered event emission may still route to fail-closed guard paths.
 - Rollback:
   - Revert the scoped runtime/test/doc files above to restore the pre-split single-file runtime and pre-fix custom voice flow.
+
+## 2026-04-07 05:26 (Asia/Shanghai) - fix-typescript-historical-errors
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `src/features/voice-assistant/config/runtimeConfig.ts`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+- Summary:
+  - Fixed `normalizeRuntimePersonaConfig` active-role selection typing by replacing `&&` short-circuit unions with explicit optional lookups, ensuring `activeRole` is always a valid `RuntimePersonaRole`.
+  - Fixed `VoiceAssistantConversationScreen` async toggle test resolver typing so Promise resolvers keep callable types under `tsc --noEmit`.
+  - Removed the two historical TypeScript errors reported in prior refactor rounds.
+- Tests:
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (pass)
+- Risk:
+  - Runtime config normalization now falls back to default role when lookup misses; behavior should remain equivalent but depends on role list assumptions.
+  - Test-only resolver typing changes should not affect runtime behavior.
+- Rollback:
+  - Revert the two source files above to restore previous typing and test resolver declarations.
