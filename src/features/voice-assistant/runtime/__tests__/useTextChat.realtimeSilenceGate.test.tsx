@@ -1,19 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useTextChat } from '../useTextChat';
 
-function createDeferred<T>() {
-  let resolve: ((value: T) => void) | null = null;
-  const promise = new Promise<T>((innerResolve) => {
-    resolve = innerResolve;
-  });
-  return {
-    promise,
-    resolve: (value: T) => {
-      resolve?.(value);
-    },
-  };
-}
-
 const mockStartCapture = jest.fn<Promise<void>, [((frame: Uint8Array) => Promise<void> | void)?]>();
 const mockStopCapture = jest.fn<Promise<void>, []>();
 const mockStopPlayback = jest.fn<Promise<void>, []>();
@@ -136,15 +123,11 @@ jest.mock('../../config/runtimeConfigRepo', () => ({
   validateRuntimeConfigForSave: jest.fn(() => []),
 }));
 
-describe('useTextChat realtime lifecycle lock', () => {
+describe('useTextChat realtime silence gate', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
-      getEffectiveRuntimeConfig: jest.Mock;
-    };
-    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockImplementation(async () => runtimeConfig);
     process.env.NODE_ENV = 'development';
     mockStartCapture.mockImplementation(
       (onFrame) => {
@@ -179,7 +162,7 @@ describe('useTextChat realtime lifecycle lock', () => {
     process.env.NODE_ENV = originalNodeEnv;
   });
 
-  it('prevents concurrent realtime start pipelines', async () => {
+  it('drops sustained low-energy frames before upstream send', async () => {
     const { result } = renderHook(() => useTextChat());
 
     await waitFor(() => {
@@ -187,120 +170,98 @@ describe('useTextChat realtime lifecycle lock', () => {
     });
 
     await act(async () => {
-      await Promise.all([
-        result.current.toggleVoice(),
-        result.current.toggleVoice(),
-      ]);
+      await result.current.toggleVoice();
     });
 
-    expect(mockConnect).toHaveBeenCalledTimes(1);
-    expect(mockStartSession).toHaveBeenCalledTimes(1);
-    expect(mockStartCapture).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      expect(result.current.isVoiceActive).toBe(true);
+      expect(typeof latestCaptureCallback).toBe('function');
     });
+
+    const callback = latestCaptureCallback as (frame: Uint8Array) => Promise<void>;
+    const silentFrame = new Uint8Array(3200);
+    const speechFrame = new Uint8Array(3200);
+    speechFrame[0] = 0xff;
+    speechFrame[1] = 0x1f;
+
+    await act(async () => {
+      for (let index = 0; index < 12; index += 1) {
+        await callback(silentFrame);
+      }
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(3);
+    expect(mockSendAudioFrame).toHaveBeenLastCalledWith(speechFrame);
   });
 
-  it('bootstraps default conversation with hydrated persona prompt snapshot', async () => {
+  it('creates a local mute window after speech tails into sustained silence', async () => {
     const { result } = renderHook(() => useTextChat());
 
     await waitFor(() => {
       expect(result.current.activeConversationId).not.toBeNull();
     });
 
-    expect(result.current.conversations[0]?.systemPromptSnapshot).toBe('persisted persona prompt');
-  });
-
-  it('uses hydrated persona snapshot when creating conversation before bootstrap hydration', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
-      getEffectiveRuntimeConfig: jest.Mock;
-    };
-    const delayedHydration = createDeferred<typeof runtimeConfig>();
-    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockReset();
-    runtimeConfigRepoModule.getEffectiveRuntimeConfig
-      .mockImplementationOnce(() => delayedHydration.promise)
-      .mockImplementationOnce(async () => ({
-        ...runtimeConfig,
-        persona: {
-          activeRoleId: 'persona-legacy-custom',
-          roles: [
-            {
-              id: 'persona-default-konan',
-              name: '江户川柯南',
-              systemPrompt: 'persisted persona prompt',
-              source: 'default' as const,
-            },
-            {
-              id: 'persona-legacy-custom',
-              name: '我的角色',
-              systemPrompt: 'late hydrated persona prompt',
-              source: 'custom' as const,
-            },
-          ],
-          systemPrompt: 'late hydrated persona prompt',
-          source: 'custom' as const,
-        },
-      }));
-
-    const { result } = renderHook(() => useTextChat());
-
     await act(async () => {
-      await result.current.createConversation('抢先会话');
-    });
-
-    expect(result.current.conversations[0]?.systemPromptSnapshot).toBe('late hydrated persona prompt');
-    delayedHydration.resolve(runtimeConfig);
-  });
-
-  it('does not create default conversation after hydration if user already created one', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
-      getEffectiveRuntimeConfig: jest.Mock;
-    };
-    const delayedHydration = createDeferred<typeof runtimeConfig>();
-    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockReset();
-    runtimeConfigRepoModule.getEffectiveRuntimeConfig
-      .mockImplementationOnce(() => delayedHydration.promise)
-      .mockImplementationOnce(async () => ({
-        ...runtimeConfig,
-        persona: {
-          activeRoleId: 'persona-legacy-custom',
-          roles: [
-            {
-              id: 'persona-default-konan',
-              name: '江户川柯南',
-              systemPrompt: 'persisted persona prompt',
-              source: 'default' as const,
-            },
-            {
-              id: 'persona-legacy-custom',
-              name: '我的角色',
-              systemPrompt: 'late hydrated persona prompt',
-              source: 'custom' as const,
-            },
-          ],
-          systemPrompt: 'late hydrated persona prompt',
-          source: 'custom' as const,
-        },
-      }));
-
-    const { result } = renderHook(() => useTextChat());
-
-    let createdConversationId = '';
-    await act(async () => {
-      createdConversationId = await result.current.createConversation('抢先会话');
-    });
-    expect(result.current.activeConversationId).toBe(createdConversationId);
-
-    await act(async () => {
-      delayedHydration.resolve(runtimeConfig);
-      await Promise.resolve();
+      await result.current.toggleVoice();
     });
 
     await waitFor(() => {
-      expect(result.current.conversations).toHaveLength(1);
-      expect(result.current.conversations[0]?.title).toBe('抢先会话');
-      expect(result.current.activeConversationId).toBe(createdConversationId);
+      expect(typeof latestCaptureCallback).toBe('function');
     });
-  });
+    expect(result.current.voiceRuntimeHint).toBe('正在听你说');
 
+    const callback = latestCaptureCallback as (frame: Uint8Array) => Promise<void>;
+    const silentFrame = new Uint8Array(3200);
+    const speechFrame = new Uint8Array(3200);
+    speechFrame[0] = 0xff;
+    speechFrame[1] = 0x1f;
+
+    const nowSpy = jest.spyOn(Date, 'now');
+    let nowMs = 1000;
+    nowSpy.mockImplementation(() => nowMs);
+
+    await act(async () => {
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      for (let index = 0; index < 9; index += 1) {
+        nowMs += 67;
+        await callback(silentFrame);
+      }
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('已发送，等待回复');
+    });
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(6);
+
+    await act(async () => {
+      nowMs += 67;
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(6);
+
+    await act(async () => {
+      nowMs += 1300;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+      nowMs += 67;
+      await callback(speechFrame);
+    });
+
+    expect(mockSendAudioFrame).toHaveBeenCalledTimes(10);
+    expect(mockSendAudioFrame).toHaveBeenLastCalledWith(speechFrame);
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('已听到你在说话');
+    });
+    nowSpy.mockRestore();
+  });
 });

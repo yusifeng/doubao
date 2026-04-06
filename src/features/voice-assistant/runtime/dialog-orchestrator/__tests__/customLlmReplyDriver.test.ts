@@ -5,11 +5,17 @@ import {
 } from '../replyDrivers/customLlmReplyDriver';
 
 describe('customLlm reply driver helpers', () => {
-  it('drops leaked platform reply once custom turn owns the reply', () => {
+  it('always drops platform reply in custom_llm mode', () => {
     expect(
       shouldDropPlatformReplyInCustomTurn({
         replyChainMode: 'custom_llm',
         replyOwner: 'custom',
+      }),
+    ).toBe(true);
+    expect(
+      shouldDropPlatformReplyInCustomTurn({
+        replyChainMode: 'custom_llm',
+        replyOwner: 'platform',
       }),
     ).toBe(true);
 

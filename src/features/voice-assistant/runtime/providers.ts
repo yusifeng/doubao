@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import { MockAudioProvider } from '../../../core/providers/audio/mock';
 import type { AudioProvider } from '../../../core/providers/audio/types';
+import { ConsoleAuditProvider } from '../../../core/providers/audit/console';
+import type { AuditProvider } from '../../../core/providers/audit/types';
 import { AndroidDialogEngineProvider } from '../../../core/providers/dialog-engine/android';
 import { MockDialogEngineProvider } from '../../../core/providers/dialog-engine/mock';
 import type { DialogEngineProvider } from '../../../core/providers/dialog-engine/types';
@@ -20,6 +22,7 @@ export type VoiceAssistantProviders = {
   dialogEngine: DialogEngineProvider;
   reply: ReplyProvider;
   observability: ObservabilityProvider;
+  audit: AuditProvider;
 };
 
 export function createVoiceAssistantProviders(runtimeConfig: RuntimeConfig): VoiceAssistantProviders {
@@ -76,5 +79,6 @@ export function createVoiceAssistantProviders(runtimeConfig: RuntimeConfig): Voi
     dialogEngine,
     reply: replyProvider,
     observability: new ConsoleObservabilityProvider(),
+    audit: new ConsoleAuditProvider(),
   };
 }

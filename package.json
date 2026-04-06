@@ -17,6 +17,7 @@
     "android:run": "expo run:android",
     "ios:run": "expo run:ios",
     "web": "expo start --web",
+    "voice:diag": "node scripts/voice-log-diagnose.mjs",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

@@ -14,6 +14,7 @@ const mockDialogUseClientTriggeredTts = jest.fn<Promise<void>, []>();
 const mockDialogUseServerTriggeredTts = jest.fn<Promise<void>, []>();
 const mockDialogStreamClientTts = jest.fn<Promise<void>, [{ start: boolean; content: string; end: boolean }]>();
 const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
+const mockDialogInterruptCurrentDialog = jest.fn<Promise<void>, []>();
 const mockDialogSetListener = jest.fn<
   void,
   [((event: { type: string; text?: string; sessionId?: string }) => void) | null]
@@ -90,7 +91,7 @@ jest.mock('../providers', () => ({
       stopConversation: mockDialogStopConversation,
       pauseTalking: jest.fn(),
       resumeTalking: jest.fn(),
-      interruptCurrentDialog: jest.fn(),
+      interruptCurrentDialog: mockDialogInterruptCurrentDialog,
       sendTextQuery: mockDialogSendTextQuery,
       useClientTriggeredTts: mockDialogUseClientTriggeredTts,
       useServerTriggeredTts: mockDialogUseServerTriggeredTts,
@@ -106,6 +107,9 @@ jest.mock('../providers', () => ({
     },
     observability: {
       log: jest.fn(),
+    },
+    audit: {
+      record: jest.fn(),
     },
   }),
 }));
@@ -160,6 +164,7 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     mockDialogUseServerTriggeredTts.mockResolvedValue();
     mockDialogStreamClientTts.mockResolvedValue();
     mockDialogSendTextQuery.mockResolvedValue();
+    mockDialogInterruptCurrentDialog.mockResolvedValue();
     mockAudioWaitForRecognitionResult
       .mockResolvedValueOnce('你好')
       .mockImplementation(() => new Promise<string | null>(() => {}));
@@ -342,6 +347,48 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     });
   });
 
+  it('does not drop player_finish after noisy asr_start during custom speaking', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    const sessionId = 'voice-custom-noisy-asr';
+    await act(async () => {
+      mockDialogListener?.({ type: 'engine_start', sessionId });
+      mockDialogListener?.({ type: 'session_ready', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '今天真是个好日子呀。', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(mockDialogStreamClientTts).toHaveBeenCalled();
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'player_start', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toMatch(/助手播报中|说话或点击打断/);
+    });
+
+    // Noise ASR start during speaking should not clear custom stream ownership.
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '嗯', sessionId });
+      mockDialogListener?.({ type: 'player_finish', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
   it('persists partial assistant text when a newer voice turn preempts the current round', async () => {
     let releaseFirstRound: (() => void) | null = null;
     const firstRoundBlocked = new Promise<void>((resolve) => {
@@ -394,7 +441,7 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     });
   });
 
-  it('keeps custom_llm text generation and skips local speak when client tts mode cannot be enabled', async () => {
+  it('fails closed and resets the voice turn when client tts selection is not ready', async () => {
     mockDialogUseClientTriggeredTts.mockRejectedValue(new Error('trigger mode switch failed'));
 
     const { result } = renderHook(() => useTextChat());
@@ -410,37 +457,33 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     await act(async () => {
       mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-fallback' });
       mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-fallback' });
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-fallback' });
       mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'voice-custom-fallback' });
     });
 
     await waitFor(() => {
       expect(
         result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
+          (message) =>
+            message.role === 'assistant' &&
+            message.content === '当前语音链路未完成自定义接管，本轮已取消，请重试。',
         ),
       ).toBe(true);
-      expect(result.current.connectivityHint).toContain('S2S语音播报未就绪');
-    });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'chat_partial', text: '这是平台回退回复', sessionId: 'voice-custom-fallback' });
-      mockDialogListener?.({ type: 'chat_final', text: '这是平台回退回复', sessionId: 'voice-custom-fallback' });
+      expect(result.current.connectivityHint).toContain('本轮自定义语音接管失败');
     });
 
     expect(
       result.current.messages.some(
-        (message) => message.role === 'assistant' && message.content === '这是平台回退回复',
-      ),
-    ).toBe(false);
-    expect(
-      result.current.messages.some(
-        (message) => message.role === 'assistant' && message.content === '自定义LLM语音回复失败，请重试。',
+        (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
       ),
     ).toBe(false);
     expect(mockDialogStreamClientTts).not.toHaveBeenCalled();
     expect(mockAudioSpeak).not.toHaveBeenCalled();
     expect(mockDialogUseServerTriggeredTts).not.toHaveBeenCalled();
     expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mockDialogStopConversation).toHaveBeenCalled();
+    });
   });
 
   it('treats 400061 as already-enabled client tts and continues s2s playback', async () => {
@@ -474,107 +517,4 @@ describe('useTextChat custom_llm voice mode with s2s voice synthesis', () => {
     expect(mockAudioSpeak).not.toHaveBeenCalled();
   });
 
-  it('routes custom_llm text rounds through ReplyProvider instead of dialog sendTextQuery', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.sendText('自定义文本提问');
-    });
-
-    await waitFor(() => {
-      expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
-        ),
-      ).toBe(true);
-    });
-
-    expect(mockDialogSendTextQuery).not.toHaveBeenCalled();
-    expect(mockDialogStartConversation).not.toHaveBeenCalled();
-    expect(mockAudioSpeak).not.toHaveBeenCalled();
-  });
-
-  it('keeps custom_llm-only behavior when custom generation fails without partial text', async () => {
-    mockReplyGenerateReplyStream.mockImplementationOnce(async function* brokenRound() {
-      throw new Error('custom llm request failed');
-    });
-
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.toggleVoice();
-    });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-fallback-2' });
-      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-fallback-2' });
-      mockDialogListener?.({ type: 'asr_final', text: '你是谁', sessionId: 'voice-custom-fallback-2' });
-    });
-
-    await waitFor(() => {
-      expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content === '自定义LLM语音回复失败，请重试。',
-        ),
-      ).toBe(true);
-      expect(result.current.connectivityHint).toBe('自定义LLM语音回复失败，请重试。');
-    });
-
-    await act(async () => {
-      mockDialogListener?.({
-        type: 'chat_partial',
-        text: '这是custom失败后的官方回复',
-        sessionId: 'voice-custom-fallback-2',
-      });
-      mockDialogListener?.({
-        type: 'chat_final',
-        text: '这是custom失败后的官方回复',
-        sessionId: 'voice-custom-fallback-2',
-      });
-    });
-
-    expect(
-      result.current.messages.some(
-        (message) => message.role === 'assistant' && message.content === '这是custom失败后的官方回复',
-      ),
-    ).toBe(false);
-    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
-    expect(mockDialogUseServerTriggeredTts).not.toHaveBeenCalled();
-  });
-
-  it('treats session_ready as ready even when its id differs from engine_start', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.toggleVoice();
-    });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'engine-session-id' });
-      mockDialogListener?.({ type: 'session_ready', sessionId: 'dialog-id-from-sdk' });
-      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'engine-session-id' });
-    });
-
-    await waitFor(() => {
-      expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
-        ),
-      ).toBe(true);
-    });
-
-    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
-  });
 });

@@ -120,6 +120,10 @@ describe('VoiceAssistantScreen', () => {
     return render(<SafeAreaProvider>{ui}</SafeAreaProvider>);
   }
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('renders the immersive voice shell controls', async () => {
     renderScreen(<VoiceAssistantScreen />);
 
@@ -139,8 +143,8 @@ describe('VoiceAssistantScreen', () => {
     expect(await screen.findByText('内容由 AI 生成')).toBeTruthy();
     expect(screen.queryByText('最近消息')).toBeNull();
     expect(screen.queryByText(/当前会话正在持续收听/)).toBeNull();
-    expect(screen.getByText('点击麦克风开始通话')).toBeTruthy();
-    expect(screen.getByText('开始通话')).toBeTruthy();
+    expect(screen.getByText('你可以开始说话')).toBeTruthy();
+    expect(screen.getByText('静音收音（通话中）')).toBeTruthy();
   });
 
   it('supports muting and unmuting voice input from the first control', async () => {
@@ -158,7 +162,22 @@ describe('VoiceAssistantScreen', () => {
     expect(session.toggleVoiceInputMuted).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to legacy voice toggle when input mute is unsupported', async () => {
+  it('keeps first control as no-op when voice is not active', async () => {
+    const session = createSession();
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+    await waitFor(() => {
+      expect(screen.getByText('你可以开始说话')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('voice-toggle-button'));
+
+    expect(session.toggleVoice).not.toHaveBeenCalled();
+    expect(session.toggleVoiceInputMuted).not.toHaveBeenCalled();
+    expect(session.interruptVoiceOutput).not.toHaveBeenCalled();
+  });
+
+  it('always routes first control to mute toggle even when mute support flag is false', async () => {
     const session = createSession();
     session.isVoiceActive = true;
     session.supportsVoiceInputMute = false;
@@ -170,11 +189,11 @@ describe('VoiceAssistantScreen', () => {
 
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
 
-    expect(session.toggleVoice).toHaveBeenCalledTimes(1);
-    expect(session.toggleVoiceInputMuted).not.toHaveBeenCalled();
+    expect(session.toggleVoiceInputMuted).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoice).not.toHaveBeenCalled();
   });
 
-  it('interrupts assistant output from the first control while speaking', async () => {
+  it('does not interrupt assistant output from the first control while speaking', async () => {
     const session = createSession();
     session.status = 'speaking';
     session.isVoiceActive = true;
@@ -186,8 +205,69 @@ describe('VoiceAssistantScreen', () => {
 
     fireEvent.press(screen.getByTestId('voice-toggle-button'));
 
-    expect(session.interruptVoiceOutput).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoiceInputMuted).toHaveBeenCalledTimes(1);
+    expect(session.interruptVoiceOutput).not.toHaveBeenCalled();
     expect(session.toggleVoice).not.toHaveBeenCalled();
+  });
+
+  it('starts or retries voice from status text when idle', async () => {
+    const session = createSession();
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+    await waitFor(() => {
+      expect(screen.getByText('你可以开始说话')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('voice-status-text-trigger'));
+
+    expect(session.toggleVoice).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoiceInputMuted).not.toHaveBeenCalled();
+    expect(session.interruptVoiceOutput).not.toHaveBeenCalled();
+  });
+
+  it('interrupts assistant output from status text while speaking', async () => {
+    const session = createSession();
+    session.status = 'speaking';
+    session.isVoiceActive = true;
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('说话或点击打断')).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId('voice-status-text-trigger'));
+
+    expect(session.interruptVoiceOutput).toHaveBeenCalledTimes(1);
+    expect(session.toggleVoiceInputMuted).not.toHaveBeenCalled();
+    expect(session.toggleVoice).not.toHaveBeenCalled();
+  });
+
+  it('shows speaking status from runtime hint even when status is not speaking', async () => {
+    const session = createSession();
+    session.status = 'listening';
+    session.isVoiceActive = true;
+    session.voiceRuntimeHint = '助手播报中，稍后继续听';
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('说话或点击打断')).toBeTruthy();
+    });
+  });
+
+  it('keeps muted text as the highest-priority status', async () => {
+    const session = createSession();
+    session.status = 'speaking';
+    session.isVoiceActive = true;
+    session.isVoiceInputMuted = true;
+
+    renderScreen(<VoiceAssistantScreen session={session} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('你已静音')).toBeTruthy();
+    });
+    expect(screen.queryByText('说话或点击打断')).toBeNull();
   });
 
   it('renders drawer and exit actions when callbacks exist', async () => {
@@ -252,6 +332,6 @@ describe('VoiceAssistantScreen', () => {
     expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
     expect(await screen.findByText('豆包你好。')).toBeTruthy();
     expect(screen.getByText('你好呀，今天有什么想聊的吗？')).toBeTruthy();
-    expect(screen.queryByText('点击麦克风开始通话')).toBeTruthy();
+    expect(screen.queryByText('你可以开始说话')).toBeTruthy();
   });
 });

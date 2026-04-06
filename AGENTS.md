@@ -24,6 +24,10 @@
   - 至少覆盖关键渲染与核心交互。
 - 最佳实践：
   - 默认采用最佳实践实现；偏离时必须说明原因与影响。
+- 修复策略（强制）：
+  - 禁止优先采用“止血式”临时方案（workaround/hotfix）作为第一处理手段。
+  - 出现故障时，必须先完成“优化前基线行为 vs 当前实现”的对照与根因定位，再决定修复方案。
+  - 若因线上风险必须先临时止血，需先得到人类明确批准，并在同次交付中给出根因修复与回滚计划。
 - 包管理：
   - 使用 `pnpm`。
 - 提交留痕（强制）：
@@ -45,6 +49,12 @@
 - `pnpm run web`
 - `pnpm run test`
 - `pnpm run test:coverage`
+
+## Android Build 约定（新增）
+
+- 若 agent 的代码改动会影响 Android 运行产物（尤其 `android/` 下 native 代码、Gradle 配置、或依赖 Android 原生模块的链路），agent 必须主动执行一次 Android 构建验证，不把“是否需要重建”留给用户判断。
+- 默认至少执行：`./android/gradlew -p android :app:compileDebugKotlin`。
+- 若用户正在真机联调且需要验证最新包，agent 需继续执行安装/运行命令（如 `pnpm run android:run`）完成一次可测构建。
 
 ## 计划与文档导航
 

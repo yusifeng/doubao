@@ -7,7 +7,7 @@ export function shouldDropPlatformReplyInCustomTurn(params: {
   if (params.replyChainMode !== 'custom_llm') {
     return false;
   }
-  return params.replyOwner !== 'platform';
+  return true;
 }
 
 export function shouldPersistCustomTextWhenTtsUnavailable(errorMessage: string): boolean {

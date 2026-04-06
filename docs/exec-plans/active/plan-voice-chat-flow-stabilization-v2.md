@@ -10,6 +10,18 @@
 - 再把现有实现收敛为“主干稳定、分叉受控”的结构；
 - 最后用测试和日志把稳定性门槛抬高。
 
+## 本轮实施口径（去数字依赖，决策完成版）
+
+- 业务层（`runtime/ui/orchestrator`）只消费语义事件，不再以 `3018/3011/359...` 等 `nativeMessageType` 做状态分支。
+- Android native 适配层是唯一允许处理 SDK 数字事件码的位置；上层仅接收语义结果：
+  - `assistant_playback_started`
+  - `assistant_playback_finished`
+  - `assistant_playback_interrupted`
+  - `user_speech_started`
+  - `user_speech_finalized`
+- `speaking -> listening` 唯一收口入口保持为 `player_finish`（语义等价于 `assistant_playback_finished`）。
+- 验收口径改为“语义时间线是否收口稳定”，数字事件仅作为附录级调试信息，不作为业务验收条件。
+
 ## 范围
 
 ### In Scope
@@ -120,6 +132,64 @@
 
 ## 进度记录
 
+- 2026-04-06（long-file optimization / P0+P1）：
+  - 完成 `useTextChat` 顶层共享块拆分：新增 `src/features/voice-assistant/runtime/useTextChat.shared.ts`，迁出运行时常量、语义事件映射、trace id 生成与 system prompt 解析，`useTextChat.ts` 从 `3504` 行降至 `3401` 行。
+  - 完成 provider 边界拆分：
+    - `src/core/providers/audio/expoRealtime.constants.ts` + `src/core/providers/audio/expoRealtime.pcm.ts`（常量/PCM 工具外置），`expoRealtime.ts` 从 `1134` 行降至 `1034` 行。
+    - `src/core/providers/s2s/websocket.constants.ts`（协议常量外置）。
+    - `src/core/providers/dialog-engine/android.eventNormalizer.ts`（native 事件归一化外置），`android.ts` 从 `292` 行降至 `176` 行。
+  - 完成三份超长 `useTextChat` 测试按场景拆分：
+    - `useTextChat.test.tsx` 分离实时静音门限场景到 `useTextChat.realtimeSilenceGate.test.tsx`（原文件 `409 -> 306`）。
+    - `useTextChat.customVoiceS2S.test.tsx` 分离 fallback/文本轮场景到 `useTextChat.customVoiceS2S.fallback.test.tsx`（原文件 `623 -> 520`）。
+    - `useTextChat.android.test.tsx` 分离 stale session 隔离场景到 `useTextChat.android.sessionIsolation.test.tsx`（原文件 `1429 -> 1320`）。
+  - 验证：
+    - `pnpm run test -- src/core/providers/dialog-engine/__tests__/android.nativeEventContract.test.ts`
+    - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx`
+    - `pnpm run test --runInBand -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+    - `pnpm run test --runInBand -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+    - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx`
+    - `pnpm exec tsc --noEmit`（当前仍有既有非本次改动错误：`runtimeConfig.ts` 与 `VoiceAssistantConversationScreen.test.tsx`）。
+
+- 2026-03-31（loop-10 / trace audit provider）：
+  - 将 `Audits` 基础设施化：新增 `AuditProvider` 契约与默认实现（`src/core/providers/audit/*`），并在 runtime provider 组合层注入。
+  - Android Dialog native->JS 事件契约新增 `questionId/replyId/traceId` 透传（含无 payload 场景的 recent-id 兜底），用于端到端链路关联。
+  - `useTextChat` 新增 turn 级 `traceId` 编排（每轮必有），并在关键阶段输出审计事件：`turn.started`、`turn.user_final`、`reply.custom.*`、`reply.platform.*`、`tts.playback_*`、`guard.platform_leak`。
+  - 自定义 LLM 请求输入补充 trace 元数据；OpenAI-compatible provider 在请求头透传 `X-Trace-Id`。
+  - `voice:diag` 报告增强：聚合并输出 `traceId/questionId/replyId`，降低手工对齐日志成本。
+- 2026-03-31（loop-9 / player heartbeat + logical-end gate）：
+  - 已确认并固化事实：`3007` 在当前 SDK（`speechengine_tob 0.0.14.3-bugfix`）为 `UsageResponse`，不是可用于播报收口的 TTS 时长事件；`3011` 为“服务端合成结束”而非“本地播放结束”。
+  - Native 播放生命周期已切换为方案A：`3018` 音频回调作为播放心跳主信号，`player_start/player_finish` 由 native 状态机聚合后再发给 JS；不再依赖 `3007` 或直接依赖 `3011` 立即收口。
+  - 结束判定改为“逻辑 end marker + 音频尾静默窗口”：
+    - `official_s2s`：`3011` 作为逻辑 marker；
+    - `custom_llm`：`chat_tts_text(end=true)` 作为逻辑 marker（`3011` 在 custom 下不作主判据）。
+  - custom 每轮 `chat_tts_text(start=true)` 增加 native 播放所有权重置，避免默认播报残留导致新一轮 `player_start` 丢失。
+  - 编译校验已通过：`./android/gradlew -p android :app:compileDebugKotlin`；并已执行 `pnpm run android:run` 安装到真机复测包。
+- 2026-03-31（loop-8 / custom tts ownership gate）：
+  - 已复盘 `speech_sdk_2026-03-31T01_15_37.535+0800.log`：同一 `custom_llm` 会话内出现 `tts_type=default` 与 `tts_type=chat_tts_text` 交替（`350`），且存在 `1204 CancelCurrentDialog -> Directive unsupported`，导致平台播报与自定义播报生命周期交叉。
+  - 已在 JS runtime 增加 custom 播报所有权门槛：仅当本轮已成功发送首包 `streamClientTtsText(start=true)` 后，才允许 `player_start/player_finish` 驱动语音页 phase；未进入 custom stream 前的 player 事件将被忽略并记录日志。
+  - 目标：先隔离平台 default 播报对 custom 语音态的干扰，消除“生成中/停顿中状态来回跳变”。
+- 2026-03-31（loop-7 / stale tts-ended candidate reset）：
+  - 已复盘 `speech_sdk_2026-03-31T00_59_51.536+0800.log`：在上一段 `3011` 后，下一段 `3008` 可能在同一 speaking 周期内再次到达；若不作废旧结束候选，会沿用旧门槛提前发出 `player_finish`，导致文案中途闪回 listening。
+  - 已在 Native 播放状态机修复：`playerAudioActive=true` 时再次收到 `3008`，强制清空旧 `lastDialogTtsEndedAtMs`，刷新段起点并设置最小段保护窗口，避免旧候选误触发。
+  - 已补契约文档：将“`3008` 重入必须使旧 `3011` 候选失效”固化为生命周期约束。
+- 2026-03-31（loop-6 / sentence-duration aligned finish）：
+  - 已复盘最新 `speech_sdk` 采样：`3008 -> 3011` 到达间隔显著短于同轮 `3007.sentence_duration.sentence_end_time`，确认 `3011` 在当前 SDK 构建中是“合成结束候选”而非“真实播放结束”。
+  - 已将 Native 播放生命周期收敛为：`3008` 进入 speaking，`3011` 标记结束候选，`3007` 句时长作为最小播放门槛，达成后才发 `player_finish`；并保留 idle/max-active 兜底。
+  - 已补 JS 防抢占：在 `speaking` 且中断未完成时，`asr_start/asr_partial` 不得提前把 phase 切回 listening，避免文案闪回。
+  - 已新增回归用例：`useTextChat.android.test.tsx`（`does not fall back to listening while speaking when barge-in interrupt is still in-flight`）。
+- 2026-03-31（loop-5 / tts-ended tail-guard）：
+  - 已复盘实机日志：`3011` 之后仍连续出现 `3018`，确认 `3011` 可能早于实际播放结束。
+  - 已将 Native finish 逻辑调整为“`3011` 结束候选 + 门槛延迟”后再发 `player_finish`（后续 loop-6 升级为 `3007` 句时长门槛）。
+  - 已重装 Android 调试包用于复测。
+- 2026-03-30（loop-4 / dialog tts lifecycle contract）：
+  - 已完成默认模式（`official_s2s`）与自定义模式（`custom_llm`）对照采样：两者均稳定出现 `3018`，均未观测到 `3019/3020`。
+  - 已确认 `3008/3011` 在两种模式均可稳定出现，且可与播报区间对齐，决定将其作为 speaking/listening 主信号。
+  - 已将契约文档更新为“`3008/3011` 主、`3019/3020` 兼容、`3018` 兜底”。
+- 2026-03-30（loop-3 / SDK playback lifecycle）：
+  - 已在 Android Native 层接入播放器生命周期事件透传（`player_start/player_finish`），并启用播放器回调开关。
+  - 已在 Dialog Engine JS 契约层补充 `player_start/player_finish` 事件类型与标准化测试。
+  - 已将语音页 speaking/listening 切换改为 SDK 事件驱动，移除 UI 侧“按文本长度估算播报尾长”的补偿逻辑。
+  - 已补回归用例：`chat_final` 到达后若播放器仍在播报，状态保持 speaking，直到 `player_finish` 才回 listening。
 - 2026-03-29：
   - 已完成 Phase 0 的基线文档初始化（事件/指令基线、已知不确定点、不变量）。
   - 待进入下一步：真机事件时序采样与 orchestrator 拆分设计。

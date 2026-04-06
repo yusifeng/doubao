@@ -42,3 +42,5 @@ yarn-error.*
 /android
 coverage/
 .claude/
+tmp/voice-log-archive/
+tmp/voice-log-reports/

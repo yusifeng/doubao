@@ -6,6 +6,14 @@ export type ReplyGenerationInput = {
   conversation: Conversation | null;
   messages: Message[];
   systemPrompt: string;
+  trace?: {
+    traceId: string;
+    questionId?: string;
+    replyId?: string;
+    sessionId?: string | null;
+    dialogId?: string | null;
+    turnId?: number;
+  };
 };
 
 export interface ReplyProvider {

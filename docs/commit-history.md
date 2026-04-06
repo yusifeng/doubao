@@ -612,3 +612,42 @@
   - If contributors treat this as optional, process drift can still happen; enforcement remains team discipline plus code review culture.
 - Rollback:
   - Revert `.codex/skills/loop-workflow/SKILL.md` changes to remove the added review gate step.
+
+## 2026-04-06 20:58 (CST) - refactor(voice-runtime): split long runtime and provider modules
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-chat-flow-stabilization-v2.md`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.shared.ts`
+  - `src/core/providers/audio/expoRealtime.ts`
+  - `src/core/providers/audio/expoRealtime.constants.ts`
+  - `src/core/providers/audio/expoRealtime.pcm.ts`
+  - `src/core/providers/s2s/websocket.ts`
+  - `src/core/providers/s2s/websocket.constants.ts`
+  - `src/core/providers/dialog-engine/android.ts`
+  - `src/core/providers/dialog-engine/android.eventNormalizer.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx`
+- Summary:
+  - Split `useTextChat` shared types/constants/pure helpers into `useTextChat.shared.ts` to reduce hook-level coupling and prepare follow-up runtime extraction.
+  - Split provider internals by boundary: audio constants + PCM helpers, websocket constants, and Android native-event normalization module.
+  - Split oversized runtime tests into scenario-focused files (silence-gate, custom fallback, Android session-isolation) while preserving behavior coverage.
+  - Synced the active execution plan with this refactor batch and verification records.
+- Tests:
+  - `pnpm run test -- src/core/providers/dialog-engine/__tests__/android.nativeEventContract.test.ts` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (fails, pre-existing unrelated errors in `runtimeConfig.ts` and `VoiceAssistantConversationScreen.test.tsx`)
+- Risk:
+  - Main long-file decomposition is partial; `useTextChat.ts` and `expoRealtime.ts` still hold mixed responsibilities and need follow-up extraction to fully meet target thresholds.
+  - Test splitting currently duplicates setup mocks across files, which can increase maintenance overhead if provider contracts change.
+- Rollback:
+  - Revert the listed runtime/provider/test files to restore single-file implementations and pre-split test layout.

@@ -7,9 +7,22 @@ export class OpenAICompatibleReplyProvider implements ReplyProvider {
   async *generateReplyStream(input: ReplyGenerationInput): AsyncIterable<string> {
     const { generateText } = require('ai') as typeof import('ai');
     const { createOpenAI } = require('@ai-sdk/openai') as typeof import('@ai-sdk/openai');
+    const traceId = typeof input.trace?.traceId === 'string' ? input.trace.traceId.trim() : '';
+    const traceFetch = traceId
+      ? async (...args: Parameters<typeof fetch>): Promise<Response> => {
+          const [url, init] = args;
+          const mergedHeaders = new Headers(init?.headers ?? undefined);
+          mergedHeaders.set('X-Trace-Id', traceId);
+          return fetch(url, {
+            ...init,
+            headers: mergedHeaders,
+          });
+        }
+      : undefined;
     const provider = createOpenAI({
       apiKey: this.config.apiKey,
       baseURL: this.config.baseUrl,
+      fetch: traceFetch,
     });
     try {
       const response = await generateText({

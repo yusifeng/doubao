@@ -35,6 +35,7 @@
   - `DialogEngineProvider`（Android 官方 Dialog SDK 语音引擎）
   - `ReplyProvider`（业务侧 LLM / 回复生成）
   - `ObservabilityProvider`（结构化日志）
+  - `AuditProvider`（业务审计事件，trace 级链路关联）
 
 ## 当前代码映射（迁移期）
 

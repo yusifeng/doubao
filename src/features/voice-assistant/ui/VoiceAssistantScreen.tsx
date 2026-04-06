@@ -37,32 +37,44 @@ function VoiceAssistantScreenContent({
   const insets = useSafeAreaInsets();
   const autoStartedRef = useRef(false);
   const isVoiceRunning = session.isVoiceActive;
-  const isAssistantSpeaking = session.status === 'speaking';
+  const isAssistantSpeakingByStatus = session.voiceCallPhase === 'speaking';
+  const isAssistantSpeaking = isVoiceRunning && isAssistantSpeakingByStatus;
   const isVoiceInputMuted = session.isVoiceInputMuted;
+
   const statusText = useMemo(() => {
-    if (!isVoiceRunning) {
-      return '点击麦克风开始通话';
-    }
     if (isVoiceInputMuted) {
       return '你已静音';
     }
     if (isAssistantSpeaking) {
-      return '助手播报中，点击麦克风可打断';
+      return '说话或点击打断';
     }
-    return '正在听你说话';
+    if (isVoiceRunning) {
+      return '正在听...';
+    }
+    return '你可以开始说话';
   }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning]);
+  const statusTextWithDebug = useMemo(() => {
+    const hintTag = session.voiceRuntimeHint.includes('播报')
+      ? '播报'
+      : session.voiceRuntimeHint.includes('听你说')
+      ? '听你说'
+      : session.voiceRuntimeHint.includes('静音')
+      ? '静音'
+      : '其他';
+    return `${statusText} (P=${session.status} H=${hintTag} S=${isAssistantSpeaking ? 1 : 0} E=${session.voiceDebugLastEvent})`;
+  }, [
+    isAssistantSpeaking,
+    session.status,
+    session.voiceDebugLastEvent,
+    session.voiceRuntimeHint,
+    statusText,
+  ]);
   const micActionLabel = useMemo(() => {
-    if (isAssistantSpeaking) {
-      return '打断播报';
-    }
     if (!isVoiceRunning) {
-      return '开始通话';
+      return '静音收音（通话中）';
     }
-    if (session.supportsVoiceInputMute) {
-      return isVoiceInputMuted ? '恢复收音' : '静音收音';
-    }
-    return '结束通话';
-  }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning, session.supportsVoiceInputMute]);
+    return isVoiceInputMuted ? '恢复收音' : '静音收音';
+  }, [isVoiceInputMuted, isVoiceRunning]);
   const dialogueLines = useMemo<DialogueLine[]>(() => {
     const baseLines: DialogueLine[] = session.messages
       .slice(-12)
@@ -109,19 +121,10 @@ function VoiceAssistantScreenContent({
   }, [autoStartOnMount, session.activeConversationId, session.isVoiceActive, session.toggleVoice]);
 
   const handleMicControl = async () => {
-    if (isAssistantSpeaking) {
-      await session.interruptVoiceOutput();
-      return;
-    }
     if (!isVoiceRunning) {
-      await session.toggleVoice();
       return;
     }
-    if (session.supportsVoiceInputMute) {
-      await session.toggleVoiceInputMuted();
-      return;
-    }
-    await session.toggleVoice();
+    await session.toggleVoiceInputMuted();
   };
 
   const handleExitVoice = async () => {
@@ -133,6 +136,19 @@ function VoiceAssistantScreenContent({
 
   const rootPaddingTop = embedded ? 0 : insets.top + 10;
   const rootPaddingBottom = embedded ? Math.max(18, insets.bottom + 6) : Math.max(24, insets.bottom + 10);
+  const canInterruptByStatusText = isAssistantSpeaking && isVoiceRunning;
+  const canStartByStatusText = !isVoiceRunning;
+
+  const handleStatusTextPress = async () => {
+    if (canInterruptByStatusText) {
+      await session.interruptVoiceOutput();
+      return;
+    }
+    if (!canStartByStatusText) {
+      return;
+    }
+    await session.toggleVoice();
+  };
 
   return (
     <View
@@ -204,7 +220,15 @@ function VoiceAssistantScreenContent({
               <View className={voiceAssistantVoiceThemeClass.statusDot} />
               <View className={voiceAssistantVoiceThemeClass.statusDot} />
             </View>
-            <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                void handleStatusTextPress();
+              }}
+              disabled={!(canInterruptByStatusText || canStartByStatusText)}
+              testID="voice-status-text-trigger"
+            >
+              <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusTextWithDebug}</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View className={voiceAssistantVoiceThemeClass.dialogueBody} testID="voice-dialogue-scene">
@@ -228,7 +252,15 @@ function VoiceAssistantScreenContent({
                 <View className={voiceAssistantVoiceThemeClass.statusDot} />
                 <View className={voiceAssistantVoiceThemeClass.statusDot} />
               </View>
-              <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  void handleStatusTextPress();
+                }}
+                disabled={!(canInterruptByStatusText || canStartByStatusText)}
+                testID="voice-status-text-trigger"
+              >
+                <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusTextWithDebug}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -237,9 +269,7 @@ function VoiceAssistantScreenContent({
           <View className={voiceAssistantVoiceThemeClass.controlsRow}>
             <TouchableOpacity
               className={
-                isAssistantSpeaking
-                  ? voiceAssistantVoiceThemeClass.controlShellSpeaking
-                  : !isVoiceRunning
+                !isVoiceRunning
                   ? voiceAssistantVoiceThemeClass.controlShellIdle
                   : session.supportsVoiceInputMute && isVoiceInputMuted
                   ? voiceAssistantVoiceThemeClass.controlShellMuted
@@ -252,17 +282,13 @@ function VoiceAssistantScreenContent({
             >
               <VoiceAssistantIcon
                 name={
-                  isAssistantSpeaking
-                    ? 'close'
-                    : isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
+                  isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
                     ? 'mic_off'
                     : 'mic'
                 }
                 size={26}
                 color={
-                  isAssistantSpeaking
-                    ? '#FFFFFF'
-                    : isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
+                  isVoiceRunning && session.supportsVoiceInputMute && isVoiceInputMuted
                     ? '#EF4444'
                     : '#111827'
                 }

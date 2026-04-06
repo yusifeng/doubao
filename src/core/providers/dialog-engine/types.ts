@@ -6,6 +6,9 @@ export type DialogEventBase = {
   sessionId?: string;
   raw?: string;
   nativeMessageType?: string;
+  questionId?: string;
+  replyId?: string;
+  traceId?: string;
   dialogWorkMode?: DialogWorkMode;
   inputMode?: DialogConversationInputMode;
   textMode?: DialogEventTextMode;
@@ -13,12 +16,20 @@ export type DialogEventBase = {
   directiveRet?: number;
   dialogId?: string;
   turnIndex?: number;
+  semanticEvent?:
+    | 'assistant_playback_started'
+    | 'assistant_playback_finished'
+    | 'assistant_playback_interrupted'
+    | 'user_speech_started'
+    | 'user_speech_finalized';
 };
 
 export type DialogEngineEvent =
   | ({ type: 'engine_start' } & DialogEventBase)
   | ({ type: 'session_ready' } & DialogEventBase)
   | ({ type: 'engine_stop' } & DialogEventBase)
+  | ({ type: 'player_start' } & DialogEventBase)
+  | ({ type: 'player_finish' } & DialogEventBase)
   | ({ type: 'error'; errorCode?: number; errorMessage?: string } & DialogEventBase)
   | ({ type: 'asr_start' } & DialogEventBase)
   | ({ type: 'asr_partial'; text: string } & DialogEventBase)

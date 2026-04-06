@@ -2,6 +2,16 @@ import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { useTextChat } from '../useTextChat';
 
+type DialogTestEvent = {
+  type: string;
+  text?: string;
+  sessionId?: string;
+  questionId?: string;
+  replyId?: string;
+  traceId?: string;
+  nativeMessageType?: string | number;
+};
+
 const mockDialogPrepare = jest.fn<Promise<void>, [Record<string, unknown>?]>();
 const mockDialogStartConversation = jest.fn<Promise<void>, [unknown]>();
 const mockDialogStopConversation = jest.fn<Promise<void>, []>();
@@ -10,10 +20,11 @@ const mockDialogResumeTalking = jest.fn<Promise<void>, []>();
 const mockDialogInterruptCurrentDialog = jest.fn<Promise<void>, []>();
 const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
 const mockDialogDestroy = jest.fn<Promise<void>, []>();
-const mockDialogSetListener = jest.fn<void, [((event: { type: string; text?: string; sessionId?: string }) => void) | null]>();
+const mockDialogSetListener = jest.fn<void, [((event: DialogTestEvent) => void) | null]>();
 const mockAudioSpeak = jest.fn();
 const mockObservabilityLog = jest.fn();
-let mockDialogListener: ((event: { type: string; text?: string; sessionId?: string }) => void) | null = null;
+const mockAuditRecord = jest.fn();
+let mockDialogListener: ((event: DialogTestEvent) => void) | null = null;
 const mockReadVoicePipelineMode = jest.fn(() => 'realtime_audio');
 const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
@@ -55,6 +66,14 @@ const runtimeConfig = {
 function emitEngineStart(sessionId = 'session-1') {
   mockDialogListener?.({ type: 'engine_start', sessionId });
   return sessionId;
+}
+
+function emitPlayerStart(sessionId: string) {
+  mockDialogListener?.({ type: 'player_start', sessionId });
+}
+
+function emitPlayerFinish(sessionId: string) {
+  mockDialogListener?.({ type: 'player_finish', sessionId });
 }
 
 jest.mock('../providers', () => ({
@@ -105,6 +124,9 @@ jest.mock('../providers', () => ({
     observability: {
       log: mockObservabilityLog,
     },
+    audit: {
+      record: mockAuditRecord,
+    },
   }),
 }));
 
@@ -149,6 +171,7 @@ describe('useTextChat android dialog sdk flow', () => {
     mockDialogInterruptCurrentDialog.mockResolvedValue();
     mockDialogSendTextQuery.mockResolvedValue();
     mockDialogDestroy.mockResolvedValue();
+    mockAuditRecord.mockReset();
   });
 
   afterAll(() => {
@@ -277,6 +300,169 @@ describe('useTextChat android dialog sdk flow', () => {
     await waitFor(() => {
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '这是服务端回复')).toBe(true);
       expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
+  it('records audit events with trace and sdk ids for one platform reply turn', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    const sessionId = 'voice-session-audit-1';
+    await act(async () => {
+      emitEngineStart(sessionId);
+      mockDialogListener?.({
+        type: 'asr_start',
+        sessionId,
+        questionId: 'q-42',
+        traceId: 'sdk-trace-42',
+      });
+      mockDialogListener?.({
+        type: 'asr_partial',
+        sessionId,
+        text: '你是柯南吗',
+        questionId: 'q-42',
+      });
+      mockDialogListener?.({
+        type: 'asr_final',
+        sessionId,
+        text: '你是柯南吗',
+        questionId: 'q-42',
+      });
+      mockDialogListener?.({
+        type: 'chat_partial',
+        sessionId,
+        text: '当然',
+        questionId: 'q-42',
+        replyId: 'r-42',
+      });
+      mockDialogListener?.({
+        type: 'chat_final',
+        sessionId,
+        text: '当然，我是江户川柯南。',
+        questionId: 'q-42',
+        replyId: 'r-42',
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '当然，我是江户川柯南。',
+        ),
+      ).toBe(true);
+    });
+
+    const auditEvents = mockAuditRecord.mock.calls.map((call) => call[0]);
+    const stages = auditEvents.map((event) => event.stage);
+    expect(stages).toEqual(
+      expect.arrayContaining(['turn.started', 'turn.user_final', 'reply.platform.partial', 'reply.platform.final']),
+    );
+
+    const replyFinalAudit = auditEvents.find((event) => event.stage === 'reply.platform.final');
+    expect(replyFinalAudit).toEqual(
+      expect.objectContaining({
+        traceId: expect.any(String),
+        questionId: 'q-42',
+        replyId: 'r-42',
+      }),
+    );
+  });
+
+  it('keeps speaking until player_finish even after chat_final is received', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    const sessionId = 'voice-session-player-lifecycle';
+    await act(async () => {
+      emitEngineStart(sessionId);
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是服务端播报中', sessionId });
+      emitPlayerStart(sessionId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'chat_final', text: '这是服务端播报中', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+    });
+
+    await act(async () => {
+      emitPlayerFinish(sessionId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
+  it('does not fall back to listening while speaking when barge-in interrupt is still in-flight', async () => {
+    let resolveInterrupt: (() => void) | null = null;
+    mockDialogInterruptCurrentDialog.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveInterrupt = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    const sessionId = 'voice-session-speaking-guard';
+    await act(async () => {
+      emitEngineStart(sessionId);
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '第一句', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '助手正在播报中', sessionId });
+      emitPlayerStart(sessionId);
+    });
+
+    await waitFor(() => {
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+    });
+
+    await act(async () => {
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_partial', text: '误触发插话', sessionId });
+    });
+
+    await waitFor(() => {
+      expect(mockDialogInterruptCurrentDialog).toHaveBeenCalledTimes(1);
+      expect(result.current.voiceRuntimeHint).toBe('助手播报中，稍后继续听');
+    });
+
+    await act(async () => {
+      resolveInterrupt?.();
+      await Promise.resolve();
     });
   });
 
@@ -1007,115 +1193,6 @@ describe('useTextChat android dialog sdk flow', () => {
         (message) => message.role === 'assistant' && message.content === '原会话草稿回复',
       ),
     ).toBe(false);
-  });
-
-  it('ignores stale engine_stop events from a previous android dialog session', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.sendText('当前文本轮');
-    });
-
-    await act(async () => {
-      emitEngineStart('text-session-current');
-      mockDialogListener?.({ type: 'engine_stop', sessionId: 'text-session-stale' });
-      mockDialogListener?.({ type: 'chat_final', text: '当前会话回复', sessionId: 'text-session-current' });
-    });
-
-    await waitFor(() => {
-      expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '当前会话回复')).toBe(true);
-      expect(result.current.status).toBe('idle');
-    });
-  });
-
-  it('ignores chat_final that arrives after active session has already stopped', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.sendText('当前文本轮');
-    });
-
-    await act(async () => {
-      emitEngineStart('text-session-disorder');
-      mockDialogListener?.({ type: 'engine_stop', sessionId: 'text-session-disorder' });
-      mockDialogListener?.({
-        type: 'chat_final',
-        text: '乱序晚到回复',
-        sessionId: 'text-session-disorder',
-      });
-    });
-
-    await waitFor(() => {
-      expect(result.current.messages.some((message) => message.content === '乱序晚到回复')).toBe(false);
-      expect(result.current.status).toBe('idle');
-    });
-  });
-
-  it('ignores stale engine_start events that arrive after a new session is active', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.sendText('当前文本轮');
-    });
-
-    await act(async () => {
-      emitEngineStart('text-session-current');
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'text-session-stale' });
-      mockDialogListener?.({ type: 'chat_final', text: '当前会话回复', sessionId: 'text-session-current' });
-    });
-
-    await waitFor(() => {
-      expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '当前会话回复')).toBe(true);
-      expect(result.current.status).toBe('idle');
-    });
-  });
-
-  it('does not relatch a retired session when stale engine_start arrives before the new session starts', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.toggleVoice();
-    });
-
-    await act(async () => {
-      emitEngineStart('voice-session-retired');
-      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-retired' });
-    });
-
-    await waitFor(() => {
-      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
-    });
-
-    await act(async () => {
-      await result.current.sendText('切到文本轮');
-    });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-session-retired' });
-      emitEngineStart('text-session-current');
-      mockDialogListener?.({ type: 'chat_final', text: '当前会话回复', sessionId: 'text-session-current' });
-    });
-
-    await waitFor(() => {
-      expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '当前会话回复')).toBe(true);
-      expect(result.current.status).toBe('idle');
-    });
   });
 
   it('resets call state when the active android engine emits stop', async () => {

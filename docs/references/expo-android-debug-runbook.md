@@ -645,6 +645,35 @@ pnpm exec expo start -c
 
 ### 15.3 推荐抓取命令
 
+优先使用一键诊断（支持“设备在线自动同步 + 设备离线用本地归档继续分析”）：
+
+```bash
+pnpm run voice:diag
+```
+
+输出：
+
+- 归档目录：`tmp/voice-log-archive/`
+- 报告目录：`tmp/voice-log-reports/`
+- 报告内容：用户 ASR final、默认/自定义回复文本、关键事件时间线、基础异常判定
+- 自动清理：默认最多保留 `40` 份归档日志、`80` 份诊断报告
+
+设备离线时可直接分析归档，不需要手机保持连接：
+
+```bash
+pnpm run voice:diag -- --no-sync
+```
+
+指定历史日志文件分析：
+
+```bash
+pnpm run voice:diag -- --file tmp/voice-log-archive/speech_sdk_xxx.log
+```
+
+---
+
+如果需要手动 logcat 兜底，再使用下面命令。
+
 先清理旧日志：
 
 ```bash
@@ -660,8 +689,13 @@ adb logcat -d | rg "dialog.event|dialog.stale_drop|custom llm|voice-assistant|RN
 如果只想看契约字段：
 
 ```bash
-adb logcat -d | rg "sessionEpoch=|sessionId=|turnId=|replyChain=|replyOwner=|phase=" | tail -n 200
+adb logcat -d | rg "traceId=|questionId=|replyId=|sessionEpoch=|sessionId=|turnId=|replyChain=|replyOwner=|phase=" | tail -n 200
 ```
+
+说明：
+
+- `traceId` 是业务回合主键（runtime 保证每轮存在）。
+- `questionId/replyId` 是 SDK 侧关联键（来自 payload，可能在部分事件缺失）。
 
 ### 15.4 快速判定表
 
