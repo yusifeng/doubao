@@ -15,47 +15,22 @@ const mockDialogUseServerTriggeredTts = jest.fn<Promise<void>, []>();
 const mockDialogStreamClientTts = jest.fn<Promise<void>, [{ start: boolean; content: string; end: boolean }]>();
 const mockDialogSendTextQuery = jest.fn<Promise<void>, [string]>();
 const mockDialogInterruptCurrentDialog = jest.fn<Promise<void>, []>();
-const mockDialogSetListener = jest.fn<
-  void,
-  [((event: { type: string; text?: string; sessionId?: string }) => void) | null]
->();
+const mockDialogSetListener = jest.fn<void, [((event: { type: string; text?: string; sessionId?: string }) => void) | null]>();
 const mockReplyGenerateReplyStream = jest.fn();
 let mockDialogListener: ((event: { type: string; text?: string; sessionId?: string }) => void) | null = null;
 const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
   replyChainMode: 'custom_llm' as const,
-  llm: {
-    baseUrl: 'https://api.deepseek.com/v1',
-    apiKey: 'test-api-key',
-    model: 'deepseek-chat',
-    provider: 'deepseek',
-  },
-  s2s: {
-    appId: '7948119309',
-    accessToken: 'test-access-token',
-    wsUrl: DEFAULT_S2S_WS_URL,
-  },
+  llm: { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'test-api-key', model: 'deepseek-chat', provider: 'deepseek' },
+  s2s: { appId: '7948119309', accessToken: 'test-access-token', wsUrl: DEFAULT_S2S_WS_URL },
   persona: {
     activeRoleId: 'persona-default-konan',
-    roles: [
-      {
-        id: 'persona-default-konan',
-        name: '江户川柯南',
-        systemPrompt: 'default prompt',
-        source: 'default' as const,
-      },
-    ],
+    roles: [{ id: 'persona-default-konan', name: '江户川柯南', systemPrompt: 'default prompt', source: 'default' as const }],
     systemPrompt: 'default prompt',
     source: 'default' as const,
   },
-  androidDialog: {
-    appKeyOverride: 'test-app-key',
-  },
-  voice: {
-    speakerId: 'S_mXRP7Y5M1',
-    speakerLabel: '默认音色',
-    sourceType: 'default' as const,
-  },
+  androidDialog: { appKeyOverride: 'test-app-key' },
+  voice: { speakerId: 'S_mXRP7Y5M1', speakerLabel: '默认音色', sourceType: 'default' as const },
 };
 
 jest.mock('../providers', () => ({
@@ -103,30 +78,18 @@ jest.mock('../providers', () => ({
       destroy: jest.fn(),
     },
     reply: {
+      marker: 'reply-provider',
       generateReplyStream: mockReplyGenerateReplyStream,
     },
-    observability: {
-      log: jest.fn(),
-    },
-    audit: {
-      record: jest.fn(),
-    },
+    observability: { log: jest.fn() },
+    audit: { record: jest.fn() },
   }),
 }));
 
 jest.mock('../../config/env', () => ({
   readVoicePipelineMode: () => 'realtime_audio',
-  readS2SEnv: () => ({
-    appId: '7948119309',
-    appKey: 'test-app-key',
-    accessToken: 'test-access-token',
-  }),
-  readLLMEnv: () => ({
-    baseUrl: 'https://api.deepseek.com/v1',
-    apiKey: 'test-api-key',
-    model: 'deepseek-chat',
-    provider: 'deepseek',
-  }),
+  readS2SEnv: () => ({ appId: '7948119309', appKey: 'test-app-key', accessToken: 'test-access-token' }),
+  readLLMEnv: () => ({ baseUrl: 'https://api.deepseek.com/v1', apiKey: 'test-api-key', model: 'deepseek-chat', provider: 'deepseek' }),
   readReplyChainMode: () => 'custom_llm',
   maskSecret: (value: string) => value,
 }));
@@ -134,14 +97,11 @@ jest.mock('../../config/env', () => ({
 jest.mock('../../config/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
   saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
-  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
-    ...currentConfig,
-    ...draft,
-  })),
+  buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({ ...currentConfig, ...draft })),
   validateRuntimeConfigForSave: jest.fn(() => []),
 }));
 
-describe('useTextChat custom_llm fallback paths', () => {
+describe('useTextChat custom_llm client tts selection guard', () => {
   const originalPlatformOs = Platform.OS;
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -149,10 +109,7 @@ describe('useTextChat custom_llm fallback paths', () => {
     jest.clearAllMocks();
     mockDialogListener = null;
     process.env.NODE_ENV = 'development';
-    Object.defineProperty(Platform, 'OS', {
-      configurable: true,
-      value: 'android',
-    });
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
     mockAudioStartRecognition.mockResolvedValue();
     mockAudioStopRecognition.mockResolvedValue(null);
     mockAudioAbortRecognition.mockResolvedValue();
@@ -165,125 +122,75 @@ describe('useTextChat custom_llm fallback paths', () => {
     mockDialogStreamClientTts.mockResolvedValue();
     mockDialogSendTextQuery.mockResolvedValue();
     mockDialogInterruptCurrentDialog.mockResolvedValue();
-    mockAudioWaitForRecognitionResult
-      .mockResolvedValueOnce('你好')
-      .mockImplementation(() => new Promise<string | null>(() => {}));
-    mockReplyGenerateReplyStream.mockImplementation(async function* generateReplyStream() {
+    mockAudioWaitForRecognitionResult.mockResolvedValue('你好');
+    mockReplyGenerateReplyStream.mockImplementation(async function* stream(this: { marker?: string }) {
+      if (this?.marker !== 'reply-provider') {
+        throw new Error('reply provider context missing');
+      }
       yield '这是 custom_llm 的回复';
     });
   });
 
   afterAll(() => {
     process.env.NODE_ENV = originalNodeEnv;
-    Object.defineProperty(Platform, 'OS', {
-      configurable: true,
-      value: originalPlatformOs,
-    });
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalPlatformOs });
   });
 
-  it('routes custom_llm text rounds through ReplyProvider instead of dialog sendTextQuery', async () => {
+  it('fails closed and resets the voice turn when client tts selection is not ready', async () => {
+    mockDialogUseClientTriggeredTts.mockRejectedValue(new Error('trigger mode switch failed'));
     const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
+    await waitFor(() => expect(result.current.activeConversationId).not.toBeNull());
     await act(async () => {
-      await result.current.sendText('自定义文本提问');
+      await result.current.toggleVoice();
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-fallback' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-fallback' });
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-fallback' });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'voice-custom-fallback' });
     });
-
     await waitFor(() => {
       expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
-        ),
+        result.current.messages.some((m) => m.role === 'assistant' && m.content === '当前语音链路未完成自定义接管，本轮已取消，请重试。'),
       ).toBe(true);
     });
+    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
+    expect(mockDialogStreamClientTts).not.toHaveBeenCalled();
+  });
 
-    expect(typeof mockReplyGenerateReplyStream.mock.calls[0]?.[0]?.trace?.traceId).toBe('string');
-    expect(mockReplyGenerateReplyStream.mock.calls[0]?.[0]?.trace?.traceId).toMatch(/va-\d+-1-/);
-    expect(mockDialogSendTextQuery).not.toHaveBeenCalled();
-    expect(mockDialogStartConversation).not.toHaveBeenCalled();
+  it('treats 400061 as already-enabled client tts and continues s2s playback', async () => {
+    mockDialogUseClientTriggeredTts.mockRejectedValueOnce(new Error('Use client triggered tts failed: 400061'));
+    const { result } = renderHook(() => useTextChat());
+    await waitFor(() => expect(result.current.activeConversationId).not.toBeNull());
+    await act(async () => {
+      await result.current.toggleVoice();
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-400061' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-400061' });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'voice-custom-400061' });
+    });
+    await waitFor(() => {
+      expect(result.current.messages.some((m) => m.role === 'assistant' && m.content.includes('custom_llm'))).toBe(true);
+    });
+    expect(mockDialogStreamClientTts).toHaveBeenCalled();
     expect(mockAudioSpeak).not.toHaveBeenCalled();
   });
 
-  it('keeps custom_llm-only behavior when custom generation fails without partial text', async () => {
-    mockReplyGenerateReplyStream.mockImplementationOnce(async function* brokenRound() {
-      throw new Error('custom llm request failed');
-    });
-
+  it('treats 400060 as not-ready and retries client tts selection', async () => {
+    mockDialogUseClientTriggeredTts.mockRejectedValueOnce(new Error('Use client triggered tts failed: 400060'));
     const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
+    await waitFor(() => expect(result.current.activeConversationId).not.toBeNull());
     await act(async () => {
       await result.current.toggleVoice();
+      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-400060' });
+      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-400060' });
+      mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-custom-400060' });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'voice-custom-400060' });
     });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'voice-custom-fallback-2' });
-      mockDialogListener?.({ type: 'session_ready', sessionId: 'voice-custom-fallback-2' });
-      mockDialogListener?.({ type: 'asr_final', text: '你是谁', sessionId: 'voice-custom-fallback-2' });
-    });
-
     await waitFor(() => {
       expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content === '自定义LLM语音回复失败，请重试。',
-        ),
-      ).toBe(true);
-      expect(result.current.connectivityHint).toBe('自定义LLM语音回复失败，请重试。');
-    });
-
-    await act(async () => {
-      mockDialogListener?.({
-        type: 'chat_partial',
-        text: '这是custom失败后的官方回复',
-        sessionId: 'voice-custom-fallback-2',
-      });
-      mockDialogListener?.({
-        type: 'chat_final',
-        text: '这是custom失败后的官方回复',
-        sessionId: 'voice-custom-fallback-2',
-      });
-    });
-
-    expect(
-      result.current.messages.some(
-        (message) => message.role === 'assistant' && message.content === '这是custom失败后的官方回复',
-      ),
-    ).toBe(false);
-    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
-    expect(mockDialogUseServerTriggeredTts).not.toHaveBeenCalled();
-  });
-
-  it('treats session_ready as ready even when its id differs from engine_start', async () => {
-    const { result } = renderHook(() => useTextChat());
-
-    await waitFor(() => {
-      expect(result.current.activeConversationId).not.toBeNull();
-    });
-
-    await act(async () => {
-      await result.current.toggleVoice();
-    });
-
-    await act(async () => {
-      mockDialogListener?.({ type: 'engine_start', sessionId: 'engine-session-id' });
-      mockDialogListener?.({ type: 'session_ready', sessionId: 'dialog-id-from-sdk' });
-      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId: 'engine-session-id' });
-    });
-
-    await waitFor(() => {
-      expect(
-        result.current.messages.some(
-          (message) => message.role === 'assistant' && message.content.includes('custom_llm'),
-        ),
+        result.current.messages.some((m) => m.role === 'assistant' && m.content.includes('custom_llm')),
       ).toBe(true);
     });
-
-    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalled();
+    expect(mockDialogUseClientTriggeredTts).toHaveBeenCalledTimes(2);
+    expect(mockDialogStreamClientTts).toHaveBeenCalled();
+    expect(mockAudioSpeak).not.toHaveBeenCalled();
   });
 });

@@ -149,6 +149,11 @@
     - `pnpm run test --runInBand -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
     - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx`
     - `pnpm exec tsc --noEmit`（当前仍有既有非本次改动错误：`runtimeConfig.ts` 与 `VoiceAssistantConversationScreen.test.tsx`）。
+  - 2026-04-06（full-refactor round-2）：
+    - 新增 runtime 子模块：`useTextChat.contracts.ts`、`useTextChat.textPipeline.ts`、`useTextChat.handsFreeVoiceLoop.ts`、`useTextChat.realtimeS2SDemo.ts`、`useTextChat.androidDialogRuntime.ts`、`useTextChat.androidDialogEvents.ts`、`useTextChat.androidConversation.ts`、`useTextChat.voiceToggle.ts`。
+    - `useTextChat.ts` 进一步从 `3131` 行收敛至 `1195` 行；主文件职责转向“状态装配 + 子模块注入 + effect 订阅 + API 导出”。
+    - 测试继续拆分：新增 `useTextChat.customVoiceS2S.clientTtsSelection.test.tsx`，将 client-tts 选路失败/重试回归（含 `400060`、`400061`）从主 custom suite 拆出，`useTextChat.customVoiceS2S.test.tsx` 收敛至 `393` 行。
+    - P0/P1 门禁回归（含新增 `400060` 专项）通过；`tsc` 仅剩历史遗留错误（同上两处）。
 
 - 2026-03-31（loop-10 / trace audit provider）：
   - 将 `Audits` 基础设施化：新增 `AuditProvider` 契约与默认实现（`src/core/providers/audit/*`），并在 runtime provider 组合层注入。

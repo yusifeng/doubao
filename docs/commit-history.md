@@ -651,3 +651,46 @@
   - Test splitting currently duplicates setup mocks across files, which can increase maintenance overhead if provider contracts change.
 - Rollback:
   - Revert the listed runtime/provider/test files to restore single-file implementations and pre-split test layout.
+
+## 2026-04-07 05:21 (Asia/Shanghai) - refactor(voice-runtime): split modules and fix custom-voice regressions
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-chat-flow-stabilization-v2.md`
+  - `docs/references/dialog-sdk-event-contract.md`
+  - `src/features/voice-assistant/runtime/useTextChat.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidClientTts.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidConversation.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogRuntime.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.auditTrace.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.contracts.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.customReplyRound.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.effects.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.handsFreeVoiceLoop.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.realtimeS2SDemo.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.voiceToggle.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx`
+- Summary:
+  - Split oversized runtime hook into focused modules (state/effects/text pipeline/voice toggle/android event & conversation handlers) while keeping `useTextChat.ts` as thin facade export.
+  - Added dedicated client-TTS selection regressions (`400060` retry and `400061` already-enabled semantics) and narrowed the old custom voice suite to core flow scenarios.
+  - Fixed production regression where custom LLM voice rounds failed with `Cannot read property 'config' of undefined` by preserving provider method context when delegating `generateReplyStream`.
+  - Applied follow-up fixes for review findings: clear `liveUserTranscript` before Android text send, and restore explicit next-turn trace seeding in manual `sendText` flow.
+- Tests:
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (fails, pre-existing errors in `runtimeConfig.ts` and `VoiceAssistantConversationScreen.test.tsx`)
+- Risk:
+  - Runtime behavior is now spread across more modules; future edits must preserve injected callback contracts (especially method-context-sensitive provider calls).
+  - Android custom voice path remains sensitive to SDK lifecycle timing; misordered event emission may still route to fail-closed guard paths.
+- Rollback:
+  - Revert the scoped runtime/test/doc files above to restore the pre-split single-file runtime and pre-fix custom voice flow.

@@ -1,7 +1,7 @@
 # Android Dialog SDK 事件与指令契约（Voice/Chat 稳态版）
 
 > 目的：把 `useTextChat` 与 Android Dialog SDK 的依赖语义固化为“可验证契约”，避免继续基于猜测叠补丁。
-> 更新时间：2026-03-31（Asia/Shanghai）
+> 更新时间：2026-04-06（Asia/Shanghai）
 
 ## 0. 分层原则（本页总约束）
 
@@ -144,6 +144,7 @@
 - Runtime 主链与分叉：
   - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
   - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx`（覆盖 `400060` 重试与 `400061` 已启用语义）
 
 ## 8. 播报生命周期事件采样结论（2026-03-30 ~ 2026-03-31）
 

@@ -1,0 +1,115 @@
+import { useEffect } from 'react';
+import type { ConversationRepo } from '../repo/conversationRepo';
+import type { RuntimeConfig } from '../config/runtimeConfig';
+import { getEffectiveRuntimeConfig } from '../config/runtimeConfigRepo';
+import { isCompleteLLMConfig } from '../config/runtimeConfig';
+import { isRuntimeConfigEqual } from '../config/runtimeConfig';
+
+export function useRuntimeConfigHydrationEffect(params: {
+  setRuntimeConfig: (value: any) => void;
+  setRuntimeConfigHydrated: (value: boolean) => void;
+  runtimeConfigRef: { current: RuntimeConfig };
+  runtimeConfigHydratedRef: { current: boolean };
+}) {
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      let nextRuntimeConfig: RuntimeConfig;
+      try {
+        nextRuntimeConfig = await getEffectiveRuntimeConfig();
+      } catch {
+        nextRuntimeConfig = params.runtimeConfigRef.current;
+      }
+      if (mounted) {
+        params.setRuntimeConfig((current: RuntimeConfig) =>
+          isRuntimeConfigEqual(current, nextRuntimeConfig) ? current : nextRuntimeConfig,
+        );
+        params.runtimeConfigRef.current = nextRuntimeConfig;
+        params.runtimeConfigHydratedRef.current = true;
+        params.setRuntimeConfigHydrated(true);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+}
+
+export function useBootstrapConversationEffect(params: {
+  runtimeConfigHydrated: boolean;
+  hasBootstrappedConversationRef: { current: boolean };
+  repo: ConversationRepo;
+  setConversations: (value: any) => void;
+  setMessages: (value: any) => void;
+  setActiveConversationId: (value: string | null) => void;
+  runtimeConfigRef: { current: RuntimeConfig };
+}) {
+  useEffect(() => {
+    if (!params.runtimeConfigHydrated || params.hasBootstrappedConversationRef.current) {
+      return;
+    }
+    params.hasBootstrappedConversationRef.current = true;
+    let mounted = true;
+    async function bootstrap() {
+      const existingConversations = await params.repo.listConversations();
+      if (existingConversations.length > 0) {
+        if (!mounted) {
+          return;
+        }
+        const first = existingConversations[0];
+        if (!first) {
+          return;
+        }
+        params.setConversations(existingConversations);
+        params.setActiveConversationId(first.id);
+        params.setMessages(await params.repo.listMessages(first.id));
+        return;
+      }
+      const created = await params.repo.createConversation('默认会话', {
+        systemPromptSnapshot: params.runtimeConfigRef.current.persona.systemPrompt,
+      });
+      const refreshedConversations = await params.repo.listConversations();
+      if (!mounted) {
+        return;
+      }
+      params.setConversations(refreshedConversations);
+      params.setActiveConversationId(created.id);
+      params.setMessages(await params.repo.listMessages(created.id));
+    }
+    void bootstrap();
+    return () => {
+      mounted = false;
+    };
+  }, [params.runtimeConfigHydrated, params.repo]);
+}
+
+export function useCustomReplyConfigHintEffect(params: {
+  replyChainMode: 'official_s2s' | 'custom_llm';
+  llmConfig: RuntimeConfig['llm'];
+  setConnectivityHint: (value: string) => void;
+}) {
+  useEffect(() => {
+    if (params.replyChainMode !== 'custom_llm' || isCompleteLLMConfig(params.llmConfig)) {
+      return;
+    }
+    params.setConnectivityHint('当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置，已回退默认回复。');
+  }, [params.llmConfig, params.replyChainMode]);
+}
+
+export function useAndroidDialogListenerEffect(params: {
+  useAndroidDialogRuntime: boolean;
+  dialogEngine: { setListener: (listener: ((event: any) => void) | null) => void };
+  androidDialogEventHandlerRef: { current: (event: any) => void };
+}) {
+  useEffect(() => {
+    if (!params.useAndroidDialogRuntime) {
+      return;
+    }
+    params.dialogEngine.setListener((event) => {
+      params.androidDialogEventHandlerRef.current(event);
+    });
+    return () => {
+      params.dialogEngine.setListener(null);
+    };
+  }, [params.dialogEngine, params.useAndroidDialogRuntime]);
+}

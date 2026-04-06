@@ -870,15 +870,20 @@ describe('useTextChat android dialog sdk flow', () => {
     await act(async () => {
       emitEngineStart('voice-session-5');
       mockDialogListener?.({ type: 'asr_start', sessionId: 'voice-session-5' });
+      mockDialogListener?.({ type: 'asr_partial', text: '语音草稿', sessionId: 'voice-session-5' });
     });
 
     await waitFor(() => {
       expect(result.current.voiceToggleLabel).toBe('挂断通话');
-      expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+      expect(result.current.liveUserTranscript).toBe('语音草稿');
     });
 
     await act(async () => {
       await result.current.sendText('切到文本轮');
+    });
+
+    await waitFor(() => {
+      expect(result.current.liveUserTranscript).toBe('');
     });
 
     await act(async () => {
