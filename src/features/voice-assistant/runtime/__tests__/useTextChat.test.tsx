@@ -303,4 +303,42 @@ describe('useTextChat realtime lifecycle lock', () => {
     });
   });
 
+  it('uses the latest saved persona snapshot when creating a conversation immediately after save', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    const nextPersonaPrompt = 'newly selected persona prompt';
+
+    await act(async () => {
+      await result.current.saveRuntimeConfig({
+        persona: {
+          activeRoleId: 'persona-custom-latest',
+          roles: [
+            {
+              id: 'persona-default-konan',
+              name: '江户川柯南',
+              systemPrompt: 'persisted persona prompt',
+              source: 'default',
+            },
+            {
+              id: 'persona-custom-latest',
+              name: '新角色',
+              systemPrompt: nextPersonaPrompt,
+              source: 'custom',
+            },
+          ],
+          systemPrompt: nextPersonaPrompt,
+          source: 'custom',
+        },
+      });
+      await result.current.createConversation('新角色会话');
+    });
+
+    expect(result.current.conversations[0]?.title).toBe('新角色会话');
+    expect(result.current.conversations[0]?.systemPromptSnapshot).toBe(nextPersonaPrompt);
+  });
+
 });

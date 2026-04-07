@@ -54,6 +54,7 @@ function createSession(): UseTextChatResult {
         lastMessage: '你好',
         updatedAt: Date.now(),
         status: 'idle',
+        systemPromptSnapshot: '会话提示词快照',
       },
       {
         id: 'conv-2',
@@ -151,6 +152,35 @@ describe('VoiceAssistantConversationScreen', () => {
     expect(screen.getByText('deepseek / deepseek-chat')).toBeTruthy();
     expect(screen.queryByText('AI 创作')).toBeNull();
     expect(screen.queryByText('发现智能体')).toBeNull();
+  });
+
+  it('shows session debug dialog with session id, role and scrollable system prompt', () => {
+    const session = createSession();
+    const longPrompt = Array.from({ length: 20 }, (_, index) => `第${index + 1}行提示词`).join('\n');
+    session.conversations = session.conversations.map((conversation) =>
+      conversation.id === 'conv-1'
+        ? { ...conversation, systemPromptSnapshot: longPrompt }
+        : conversation,
+    );
+
+    renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="text"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('conversation-session-debug-button'));
+
+    expect(screen.getByTestId('conversation-session-debug-content')).toBeTruthy();
+    expect(screen.getByTestId('conversation-session-debug-session-id').props.children).toBe('conv-1');
+    expect(screen.getByTestId('conversation-session-debug-role-name').props.children).toBe('江户川柯南');
+    expect(screen.getByTestId('conversation-session-debug-prompt-scroll')).toBeTruthy();
+    expect(screen.getByTestId('conversation-session-debug-prompt').props.children).toBe(longPrompt);
+
+    fireEvent.press(screen.getByTestId('conversation-session-debug-close'));
   });
 
   it('sends text and switches to voice mode', async () => {

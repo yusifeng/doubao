@@ -26,6 +26,41 @@
 
 ## Entries
 
+## 2026-04-08 04:36 (CST) - fix(session-switch): unify drawer switch flow and stale selection guards
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `app/_layout.tsx`
+  - `app/(chat)/conversation/[conversationId].tsx`
+  - `app/(chat)/voice/[conversationId].tsx`
+  - `app/__tests__/routing.test.tsx`
+  - `src/features/voice-assistant/ui/useConversationSwitchCoordinator.ts`
+  - `src/features/voice-assistant/ui/useRouteConversationSelection.ts`
+  - `src/features/voice-assistant/ui/__tests__/useConversationSwitchCoordinator.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+- Summary:
+  - Introduced a single sidebar conversation switch coordinator to unify create/select intent flow, voice-stop sequencing, and route transition policy across chat/settings entry paths.
+  - Added focus-gated URL-to-runtime selection handling so non-focused conversation/voice route instances no longer race to rewrite active session.
+  - Hardened runtime conversation selection with epoch-based stale request dropping and explicit target conversation status updates to avoid late async overwrite.
+  - Added dedicated regression tests for coordinator intent coalescing/path timing and runtime stale select invalidation behavior.
+  - Updated conversation plan notes with the new root-cause analysis and stabilization strategy.
+- Tests:
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/useConversationSwitchCoordinator.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts app/__tests__/routing.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings in final run)
+- Risk:
+  - Coordinator currently still depends on `InteractionManager.runAfterInteractions`; RN deprecation warning exists and should be migrated to an idle/task scheduler strategy in a follow-up.
+  - Intent queue keeps only the latest pending action by design; this reduces races but intentionally drops intermediate taps under burst interaction.
+- Rollback:
+  - Revert the scoped routing/runtime/ui/test/doc files above to restore prior direct drawer handlers and pre-epoch conversation selection behavior.
+
 ## 2026-04-07 22:49 (Asia/Shanghai) - feat(voice-session): persist conversations and add drawer long-press actions
 
 - Commit: pending

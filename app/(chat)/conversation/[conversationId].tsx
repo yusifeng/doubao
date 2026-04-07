@@ -1,50 +1,40 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
-import { DrawerActions } from '@react-navigation/native';
+import { DrawerActions, useIsFocused } from '@react-navigation/native';
 import { VoiceAssistantConversationScreen } from '../../../src/features/voice-assistant/ui/VoiceAssistantConversationScreen';
 import { useVoiceAssistantRuntime } from '../../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
+import { useRouteConversationSelection } from '../../../src/features/voice-assistant/ui/useRouteConversationSelection';
 
 export default function ConversationRoute() {
   const params = useLocalSearchParams<{ conversationId?: string; mode?: string }>();
   const session = useVoiceAssistantRuntime();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : null;
   const legacyMode = params.mode === 'voice' ? 'voice' : 'text';
 
-  const hasRequestedConversation = useMemo(
-    () =>
-      requestedConversationId
-        ? session.conversations.some((conversation) => conversation.id === requestedConversationId)
-        : false,
-    [requestedConversationId, session.conversations],
-  );
+  const handleFallbackConversation = useCallback((conversationId: string) => {
+    router.setParams({ conversationId, mode: 'text' });
+  }, []);
+
+  useRouteConversationSelection({
+    requestedConversationId: legacyMode === 'voice' ? null : requestedConversationId,
+    activeConversationId: session.activeConversationId,
+    selectConversation: session.selectConversation,
+    onFallbackConversation: handleFallbackConversation,
+    enabled: isFocused,
+  });
 
   useEffect(() => {
-    if (!requestedConversationId || !session.activeConversationId) {
+    if (!isFocused || !requestedConversationId || !session.activeConversationId || legacyMode !== 'voice') {
       return;
     }
-
-    if (legacyMode === 'voice') {
-      router.replace({
-        pathname: '/voice/[conversationId]',
-        params: { conversationId: requestedConversationId },
-      });
-      return;
-    }
-
-    if (!hasRequestedConversation) {
-      router.replace({
-        pathname: '/conversation/[conversationId]',
-        params: { conversationId: session.activeConversationId },
-      });
-      return;
-    }
-
-    if (requestedConversationId !== session.activeConversationId) {
-      void session.selectConversation(requestedConversationId);
-    }
-  }, [hasRequestedConversation, legacyMode, requestedConversationId, session]);
+    router.replace({
+      pathname: '/voice/[conversationId]',
+      params: { conversationId: requestedConversationId },
+    });
+  }, [isFocused, legacyMode, requestedConversationId, session.activeConversationId]);
 
   if (!session.activeConversationId) {
     return <View className="flex-1 bg-[#FBFCFE]" testID="conversation-route-loading" />;
@@ -68,9 +58,9 @@ export default function ConversationRoute() {
           return;
         }
 
-        router.replace({
-          pathname: '/conversation/[conversationId]',
-          params: { conversationId: session.activeConversationId ?? requestedConversationId ?? 'conv-1' },
+        router.setParams({
+          conversationId: session.activeConversationId ?? requestedConversationId ?? 'conv-1',
+          mode: 'text',
         });
       }}
     />

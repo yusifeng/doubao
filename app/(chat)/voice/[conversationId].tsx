@@ -1,27 +1,22 @@
-import { DrawerActions } from '@react-navigation/native';
+import { DrawerActions, useIsFocused } from '@react-navigation/native';
 import { useKeepAwake } from 'expo-keep-awake';
 import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { useVoiceAssistantRuntime } from '../../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 import { VoiceAssistantScreen } from '../../../src/features/voice-assistant/ui/VoiceAssistantScreen';
+import { useRouteConversationSelection } from '../../../src/features/voice-assistant/ui/useRouteConversationSelection';
 
 export default function VoiceRoute() {
   useKeepAwake('voice-route');
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const session = useVoiceAssistantRuntime();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const requestedConversationId =
     typeof params.conversationId === 'string' ? params.conversationId : null;
   const conversationId = requestedConversationId ?? session.activeConversationId ?? null;
-  const hasRequestedConversation = useMemo(
-    () =>
-      requestedConversationId
-        ? session.conversations.some((conversation) => conversation.id === requestedConversationId)
-        : false,
-    [requestedConversationId, session.conversations],
-  );
   const voiceActiveRef = useRef(session.isVoiceActive);
   const toggleVoiceRef = useRef(session.toggleVoice);
   const ensureVoiceStoppedRef = useRef(session.ensureVoiceStopped);
@@ -39,29 +34,20 @@ export default function VoiceRoute() {
     ensureVoiceStoppedRef.current = session.ensureVoiceStopped;
   }, [session.ensureVoiceStopped]);
 
-  useEffect(() => {
-    if (!session.activeConversationId || !conversationId) {
-      return;
-    }
+  const fallbackToConversation = useCallback((fallbackConversationId: string) => {
+    router.replace({
+      pathname: '/conversation/[conversationId]',
+      params: { conversationId: fallbackConversationId, mode: 'text' },
+    });
+  }, []);
 
-    if (requestedConversationId && !hasRequestedConversation) {
-      router.replace({
-        pathname: '/conversation/[conversationId]',
-        params: { conversationId: session.activeConversationId },
-      });
-      return;
-    }
-
-    if (conversationId !== session.activeConversationId) {
-      void session.selectConversation(conversationId);
-    }
-  }, [
-    conversationId,
-    hasRequestedConversation,
-    requestedConversationId,
-    session,
-    session.activeConversationId,
-  ]);
+  useRouteConversationSelection({
+    requestedConversationId: conversationId,
+    activeConversationId: session.activeConversationId,
+    selectConversation: session.selectConversation,
+    onFallbackConversation: fallbackToConversation,
+    enabled: isFocused,
+  });
 
   useEffect(() => {
     return () => {
@@ -85,10 +71,6 @@ export default function VoiceRoute() {
 
   if (!conversationId) {
     return <View className="flex-1 bg-[#FBFCFE]" testID="voice-route-loading" />;
-  }
-
-  if (requestedConversationId && !hasRequestedConversation) {
-    return <View className="flex-1 bg-[#FBFCFE]" testID="voice-route-redirecting-invalid-conversation" />;
   }
 
   if (session.activeConversationId !== conversationId) {

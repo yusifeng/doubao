@@ -204,6 +204,7 @@ export function useTextChat(): UseTextChatResult {
   const [voiceDebugLastEvent, setVoiceDebugLastEvent] = useState('none');
   const [s2sSessionReady, setS2SSessionReady] = useState(false);
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
+  const conversationSelectionEpochRef = useRef(0);
 
   useEffect(() => {
     runtimeConfigRef.current = runtimeConfig;
@@ -298,6 +299,7 @@ export function useTextChat(): UseTextChatResult {
         androidDialogWorkMode,
         replyChainMode,
         androidReplyGenerationRef,
+        conversationSelectionEpochRef,
       }),
     [activeConversationId, androidDialogWorkMode, machine, providers, replyChainMode, repo, s2sSessionReady],
   );
@@ -923,7 +925,12 @@ export function useTextChat(): UseTextChatResult {
     async (draft: RuntimeConfigDraft) => {
       const result = await textPipeline.saveRuntimeConfig(draft);
       if (result.ok && 'nextConfig' in result && result.nextConfig) {
-        setRuntimeConfig(result.nextConfig);
+        runtimeConfigRef.current = result.nextConfig;
+        runtimeConfigHydratedRef.current = true;
+        setRuntimeConfigHydrated(true);
+        setRuntimeConfig((current) =>
+          isRuntimeConfigEqual(current, result.nextConfig) ? current : result.nextConfig,
+        );
       }
       return { ok: result.ok, message: result.message };
     },

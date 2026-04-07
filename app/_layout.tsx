@@ -1,8 +1,8 @@
 import 'react-native-gesture-handler';
-import { useEffect } from 'react';
-import { Dimensions } from 'react-native';
+import { useCallback, useEffect } from 'react';
+import { Dimensions, InteractionManager } from 'react-native';
 import { Drawer } from 'expo-router/drawer';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -15,59 +15,44 @@ import {
 } from '../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 import { VoiceAssistantSessionDrawerContent } from '../src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent';
 import { AppToastProvider } from '../src/shared/ui/AppToastProvider';
+import { useConversationSwitchCoordinator } from '../src/features/voice-assistant/ui/useConversationSwitchCoordinator';
 
 export { ErrorBoundary } from 'expo-router';
 
 function RootDrawerNavigator() {
   const session = useVoiceAssistantRuntime();
   const router = useRouter();
+  const pathname = usePathname();
 
   const drawerWidth = Math.min(360, Dimensions.get('window').width * 0.86);
+  const {
+    navigateToConversation,
+    runDrawerSelectConversation,
+    runDrawerCreateConversation,
+  } = useConversationSwitchCoordinator({
+    pathname,
+    router,
+    session,
+  });
 
-  async function handleSelectConversation(conversationId: string) {
-    if (session.isVoiceActive) {
-      await session.toggleVoice();
-    }
-
-    const changed = await session.selectConversation(conversationId);
-    if (!changed) {
-      router.replace({
-        pathname: '/conversation/[conversationId]',
-        params: { conversationId, mode: 'text' },
-      });
-      return;
-    }
-
-    router.replace({
-      pathname: '/conversation/[conversationId]',
-      params: { conversationId, mode: 'text' },
+  const runAfterDrawerClose = useCallback((task: () => Promise<void> | void) => {
+    InteractionManager.runAfterInteractions(() => {
+      void task();
     });
-  }
+  }, []);
 
-  async function handleCreateConversation() {
-    if (session.isVoiceActive) {
-      await session.toggleVoice();
-    }
-
-    const conversationId = await session.createConversation('新会话');
-    router.replace({
-      pathname: '/conversation/[conversationId]',
-      params: { conversationId, mode: 'text' },
-    });
-  }
-
-  async function handleOpenSettings() {
+  const handleOpenSettings = useCallback(async () => {
     router.push('/settings');
-  }
+  }, [router]);
 
-  async function handleRenameConversation(conversationId: string, title: string) {
+  const handleRenameConversation = useCallback(async (conversationId: string, title: string) => {
     if (!session.renameConversationTitle) {
       return;
     }
     await session.renameConversationTitle(conversationId, title);
-  }
+  }, [session.renameConversationTitle]);
 
-  async function handleDeleteConversation(conversationId: string) {
+  const handleDeleteConversation = useCallback(async (conversationId: string) => {
     if (!session.deleteConversation) {
       return;
     }
@@ -86,11 +71,15 @@ function RootDrawerNavigator() {
       return;
     }
 
-    router.replace({
-      pathname: '/conversation/[conversationId]',
-      params: { conversationId: result.nextConversationId, mode: 'text' },
-    });
-  }
+    navigateToConversation(result.nextConversationId);
+  }, [
+    navigateToConversation,
+    session.activeConversationId,
+    session.deleteConversation,
+    session.ensureVoiceStopped,
+    session.isVoiceActive,
+    session.toggleVoice,
+  ]);
 
   return (
     <Drawer
@@ -98,13 +87,16 @@ function RootDrawerNavigator() {
         <VoiceAssistantSessionDrawerContent
           session={session}
           onClose={() => props.navigation.closeDrawer()}
-          onSelectConversation={async (conversationId) => {
-            await handleSelectConversation(conversationId);
-            props.navigation.closeDrawer();
+          onSelectConversation={(conversationId) => {
+            runDrawerSelectConversation(
+              () => props.navigation.closeDrawer(),
+              conversationId,
+            );
           }}
-          onCreateConversation={async () => {
-            await handleCreateConversation();
-            props.navigation.closeDrawer();
+          onCreateConversation={() => {
+            runDrawerCreateConversation(
+              () => props.navigation.closeDrawer(),
+            );
           }}
           onRenameConversation={async (conversationId, title) => {
             await handleRenameConversation(conversationId, title);
@@ -113,8 +105,8 @@ function RootDrawerNavigator() {
             await handleDeleteConversation(conversationId);
           }}
           onOpenSettings={async () => {
-            await handleOpenSettings();
             props.navigation.closeDrawer();
+            runAfterDrawerClose(handleOpenSettings);
           }}
         />
       )}

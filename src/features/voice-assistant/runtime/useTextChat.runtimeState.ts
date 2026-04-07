@@ -4,6 +4,11 @@ import { buildDialogLogContextPayload, mergeTraceSeedFromEvent, upsertTurnTrace 
 import type { RealtimeCallPhase, RealtimeListeningState, TurnTraceContext } from './useTextChat.shared';
 
 export function createRuntimeStateHandlers(deps: any) {
+  const markConversationSelectionEpoch = () => {
+    deps.conversationSelectionEpochRef.current += 1;
+    return deps.conversationSelectionEpochRef.current;
+  };
+
   const syncConversationState = async () => {
     if (!deps.activeConversationId) {
       return;
@@ -13,21 +18,36 @@ export function createRuntimeStateHandlers(deps: any) {
   };
 
   const selectConversation = async (conversationId: string) => {
+    const requestEpoch = markConversationSelectionEpoch();
+    const isStaleRequest = () => requestEpoch !== deps.conversationSelectionEpochRef.current;
+
     const refreshedConversations = await deps.repo.listConversations();
+    if (isStaleRequest()) {
+      return false;
+    }
     const nextConversation = refreshedConversations.find((conversation: any) => conversation.id === conversationId);
     if (!nextConversation) {
       return false;
     }
+
     deps.setActiveConversationId(conversationId);
-    deps.setMessages(await deps.repo.listMessages(conversationId));
+    const nextMessages = await deps.repo.listMessages(conversationId);
+    if (isStaleRequest()) {
+      return false;
+    }
+    deps.setMessages(nextMessages);
     deps.setConversations(refreshedConversations);
     deps.setLiveUserTranscript('');
     deps.setPendingAssistantReply('');
-    await updateConversationRuntimeStatus('idle');
+    await updateConversationRuntimeStatus('idle', { conversationId });
+    if (isStaleRequest()) {
+      return false;
+    }
     return true;
   };
 
   const createConversation = async (title = '新会话') => {
+    markConversationSelectionEpoch();
     let systemPromptSnapshot = deps.runtimeConfigRef.current.persona.systemPrompt;
     if (!deps.runtimeConfigHydratedRef.current) {
       try {
@@ -51,7 +71,7 @@ export function createRuntimeStateHandlers(deps: any) {
     deps.setMessages(await deps.repo.listMessages(conversation.id));
     deps.setLiveUserTranscript('');
     deps.setPendingAssistantReply('');
-    await updateConversationRuntimeStatus('idle');
+    await updateConversationRuntimeStatus('idle', { conversationId: conversation.id });
     return conversation.id;
   };
 
@@ -69,6 +89,7 @@ export function createRuntimeStateHandlers(deps: any) {
   };
 
   const deleteConversation = async (conversationId: string) => {
+    markConversationSelectionEpoch();
     const deleted = await deps.repo.deleteConversation(conversationId);
     if (!deleted) {
       return { ok: false, nextConversationId: deps.activeConversationId ?? null };
@@ -210,7 +231,7 @@ export function createRuntimeStateHandlers(deps: any) {
 
   const updateConversationRuntimeStatus = async (
     status: 'idle' | 'listening' | 'thinking' | 'speaking' | 'error',
-    options?: { refreshConversations?: boolean },
+    options?: { refreshConversations?: boolean; conversationId?: string | null },
   ) => {
     switch (status) {
       case 'idle':
@@ -231,8 +252,9 @@ export function createRuntimeStateHandlers(deps: any) {
       default:
         break;
     }
-    if (deps.activeConversationId) {
-      await deps.repo.updateConversationStatus(deps.activeConversationId, status);
+    const targetConversationId = options?.conversationId ?? deps.activeConversationId;
+    if (targetConversationId) {
+      await deps.repo.updateConversationStatus(targetConversationId, status);
     }
     if (options?.refreshConversations) {
       deps.setConversations(await deps.repo.listConversations());

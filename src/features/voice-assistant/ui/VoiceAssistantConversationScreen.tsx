@@ -20,6 +20,7 @@ import type { Message } from "../types/model";
 import { VoiceAssistantIcon } from "./VoiceAssistantIcon";
 import { VoiceAssistantMessageBubble } from "./VoiceAssistantMessageBubble";
 import { VoiceAssistantScreen } from "./VoiceAssistantScreen";
+import { AppDialog } from "../../../shared/ui/AppDialog";
 
 type ConversationScreenMode = "text" | "voice";
 
@@ -38,6 +39,7 @@ export function VoiceAssistantConversationScreen({
 }: VoiceAssistantConversationScreenProps) {
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState("");
+  const [sessionDebugVisible, setSessionDebugVisible] = useState(false);
   const initialWindowHeightRef = useRef(Dimensions.get("window").height);
   const keyboardVisibleRef = useRef(false);
   const [androidKeyboardOffset, setAndroidKeyboardOffset] = useState(0);
@@ -79,6 +81,24 @@ export function VoiceAssistantConversationScreen({
   ]);
 
   const canSend = draft.trim().length > 0;
+  const activeRole = useMemo(
+    () =>
+      session.runtimeConfig.persona.roles.find(
+        (role) => role.id === session.runtimeConfig.persona.activeRoleId,
+      ) ?? session.runtimeConfig.persona.roles[0] ?? null,
+    [session.runtimeConfig.persona.activeRoleId, session.runtimeConfig.persona.roles],
+  );
+  const activeSystemPrompt = useMemo(() => {
+    const conversationPrompt = activeConversation?.systemPromptSnapshot?.trim();
+    if (conversationPrompt) {
+      return conversationPrompt;
+    }
+    const rolePrompt = activeRole?.systemPrompt?.trim();
+    if (rolePrompt) {
+      return rolePrompt;
+    }
+    return session.runtimeConfig.persona.systemPrompt?.trim() || "（空）";
+  }, [activeConversation?.systemPromptSnapshot, activeRole?.systemPrompt, session.runtimeConfig.persona.systemPrompt]);
 
   useEffect(() => {
     if (Platform.OS !== "android") {
@@ -323,6 +343,13 @@ export function VoiceAssistantConversationScreen({
                   >
                     {activeConversation?.title ?? "默认会话"}
                   </Text>
+                  <TouchableOpacity
+                    className="ml-2 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1"
+                    onPress={() => setSessionDebugVisible(true)}
+                    testID="conversation-session-debug-button"
+                  >
+                    <Text className="text-[11px] font-medium text-slate-700">测试</Text>
+                  </TouchableOpacity>
                 </View>
                 <Text
                   className={voiceAssistantConversationThemeClass.headerSubtext}
@@ -420,6 +447,48 @@ export function VoiceAssistantConversationScreen({
               />
             </View>
           ) : null}
+
+          <AppDialog
+            visible={sessionDebugVisible}
+            title="会话调试信息"
+            onBackdropPress={() => setSessionDebugVisible(false)}
+            actions={[
+              {
+                label: "关闭",
+                onPress: () => setSessionDebugVisible(false),
+                testID: "conversation-session-debug-close",
+                variant: "primary",
+              },
+            ]}
+            testID="conversation-session-debug-dialog"
+          >
+            <View className="gap-2" testID="conversation-session-debug-content">
+              <Text className="text-[12px] text-slate-500">Session ID</Text>
+              <Text className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] text-slate-900" testID="conversation-session-debug-session-id">
+                {session.activeConversationId ?? "未绑定会话"}
+              </Text>
+
+              <Text className="mt-1 text-[12px] text-slate-500">角色</Text>
+              <Text className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] text-slate-900" testID="conversation-session-debug-role-name">
+                {activeRole?.name ?? "未选择角色"}
+              </Text>
+
+              <Text className="mt-1 text-[12px] text-slate-500">系统提示词（可滚动）</Text>
+              <View className="rounded-lg border border-slate-200 bg-slate-50" testID="conversation-session-debug-prompt-wrap">
+                <ScrollView
+                  className="max-h-52"
+                  contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10 }}
+                  showsVerticalScrollIndicator
+                  nestedScrollEnabled
+                  testID="conversation-session-debug-prompt-scroll"
+                >
+                  <Text className="text-[13px] leading-5 text-slate-800" testID="conversation-session-debug-prompt">
+                    {activeSystemPrompt}
+                  </Text>
+                </ScrollView>
+              </View>
+            </View>
+          </AppDialog>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

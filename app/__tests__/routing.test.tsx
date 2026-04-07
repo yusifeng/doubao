@@ -4,6 +4,7 @@ const mockUseVoiceAssistantRuntime = jest.fn();
 const mockUseLocalSearchParams = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterPush = jest.fn();
+const mockRouterSetParams = jest.fn();
 const mockNavigationDispatch = jest.fn();
 const mockNavigationCanGoBack = jest.fn();
 const mockNavigationGoBack = jest.fn();
@@ -17,6 +18,7 @@ jest.mock('expo-router', () => ({
   router: {
     replace: mockRouterReplace,
     push: mockRouterPush,
+    setParams: mockRouterSetParams,
   },
   useLocalSearchParams: () => mockUseLocalSearchParams(),
   useNavigation: () => ({
@@ -30,6 +32,7 @@ jest.mock('@react-navigation/native', () => ({
   DrawerActions: {
     openDrawer: () => ({ type: 'OPEN_DRAWER' }),
   },
+  useIsFocused: () => true,
 }));
 
 jest.mock('../../src/features/voice-assistant/ui/VoiceAssistantScreen', () => ({
@@ -44,6 +47,10 @@ jest.mock('../../src/features/voice-assistant/ui/VoiceAssistantScreen', () => ({
     capturedVoiceScreenProps = rest;
     return <>{`voice-screen:${autoStartOnMount ? 'auto' : 'manual'}:${embedded === false ? 'immersive' : 'embedded'}`}</>;
   },
+}));
+
+jest.mock('../../src/features/voice-assistant/ui/VoiceAssistantConversationScreen', () => ({
+  VoiceAssistantConversationScreen: () => <>conversation-screen</>,
 }));
 
 jest.mock('../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider', () => ({
@@ -105,6 +112,51 @@ describe('voice assistant routes', () => {
       expect(mockRouterReplace).toHaveBeenCalledWith({
         pathname: '/voice/[conversationId]',
         params: { conversationId: 'conv-1' },
+      });
+    });
+  });
+
+  it('selects requested conversation from repo even when local list is stale', async () => {
+    const selectConversation = jest.fn().mockResolvedValue(true);
+    mockUseVoiceAssistantRuntime.mockReturnValue({
+      activeConversationId: 'conv-1',
+      conversations: [{ id: 'conv-1' }],
+      isVoiceActive: false,
+      selectConversation,
+    });
+    mockUseLocalSearchParams.mockReturnValue({ conversationId: 'conv-2', mode: 'text' });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ConversationRoute = require('../(chat)/conversation/[conversationId]').default;
+
+    render(<ConversationRoute />);
+
+    await waitFor(() => {
+      expect(selectConversation).toHaveBeenCalledWith('conv-2');
+    });
+    expect(mockRouterReplace).not.toHaveBeenCalledWith({
+      pathname: '/conversation/[conversationId]',
+      params: { conversationId: 'conv-1', mode: 'text' },
+    });
+  });
+
+  it('falls back to active conversation when requested conversation does not exist', async () => {
+    const selectConversation = jest.fn().mockResolvedValue(false);
+    mockUseVoiceAssistantRuntime.mockReturnValue({
+      activeConversationId: 'conv-1',
+      conversations: [{ id: 'conv-1' }],
+      isVoiceActive: false,
+      selectConversation,
+    });
+    mockUseLocalSearchParams.mockReturnValue({ conversationId: 'conv-missing', mode: 'text' });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ConversationRoute = require('../(chat)/conversation/[conversationId]').default;
+
+    render(<ConversationRoute />);
+
+    await waitFor(() => {
+      expect(mockRouterSetParams).toHaveBeenCalledWith({
+        conversationId: 'conv-1',
+        mode: 'text',
       });
     });
   });

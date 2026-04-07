@@ -24,6 +24,7 @@
   - 语音路由入口
   - 会话抽屉开关
   - 新建会话 / 切换会话
+  - 顶部标题区提供测试诊断入口：可弹窗查看当前 `sessionId`、角色与系统提示词（长文本滚动展示）
 - 会话抽屉支持长按会话条目弹出操作菜单：`编辑对话名称` / `从对话列表删除`。
 - 删除会话时遵循页面心智：
   - 删除非当前会话：仅更新列表，不触发当前页面路由跳转
@@ -53,3 +54,13 @@
 - 文字消息、语音最终转写、助手回复都回到同一消息流。
 - 从文字模式切到语音模式，再切回文字模式，不丢当前上下文。
 - 重启 App 后仍能恢复最近会话与历史消息。
+
+## 进度记录
+
+- 2026-04-08：
+  - 修复“设置页经 sidebar 切会话后 A/B 会话互相抢占”问题：根因是 stack 中非焦点 `conversation/voice` 路由实例也在执行 URL->runtime 的 `selectConversation` 同步，导致 active 会话被后台页面反复改写。
+  - 新增焦点门禁：仅当前聚焦路由允许执行会话同步（`useIsFocused` + `useRouteConversationSelection(enabled)`），后台页面不再参与会话选中。
+  - 会话切换机制收敛：
+    - 新增 `useConversationSwitchCoordinator` 作为 sidebar 会话切换/新建的单一入口，统一“语音停止 -> 会话动作 -> 路由跳转”的执行顺序。
+    - 引入意图队列（保留最新 pending intent），降低快速连点时多入口并发写入导致的竞态风险。
+    - runtime `selectConversation` 增加 selection epoch 过期保护，并支持按目标 `conversationId` 写入状态，避免旧请求回流覆盖新会话。
