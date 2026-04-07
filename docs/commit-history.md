@@ -26,6 +26,24 @@
 
 ## Entries
 
+## 2026-04-08 06:23 (CST) - chore(repo): stop tracking my-doubao-pic reference images
+
+- Commit: pending
+- Author: Cursor Agent
+- Scope:
+  - `.gitignore`
+  - `my-doubao-pic/`（自索引移除，本地保留）
+  - `docs/commit-history.md`
+- Summary:
+  - 使用 `git rm -r --cached my-doubao-pic/` 取消已误提交参考图的版本跟踪，仓库规则仍为 `my-doubao-pic/` 忽略。
+  - 修正 `.gitignore` 文件末尾换行，避免「No newline at end of file」。
+- Tests:
+  - `pnpm exec tsc --noEmit`（pass；无应用代码变更）
+- Risk:
+  - 历史 commit 中仍含已删除 blob；需 filter-repo/BFG 才能从历史上彻底清除。
+- Rollback:
+  - `git revert <hash>` 并视需要 `git add -f my-doubao-pic/...` 重新纳入跟踪。
+
 ## 2026-04-08 04:53 (CST) - fix(session-switch): make route the single source for select intent
 
 - Commit: pending
