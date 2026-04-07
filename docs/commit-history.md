@@ -65,6 +65,35 @@
 - Rollback:
   - Revert the scoped routing/runtime/UI/doc files above to restore previous root-level route structure and pre-immersion layout behavior.
 
+## 2026-04-07 22:03 (Asia/Shanghai) - refactor(voice-ui): remove text toggle mode and simplify footer
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `app/(chat)/voice/[conversationId].tsx`
+  - `src/core/theme/mappers.ts`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+- Summary:
+  - Removed voice-page text-view toggle end-to-end: deleted the right-top “字” button, removed `avatar/dialogue` display-mode switching logic, and kept only immersive avatar layout.
+  - Removed bottom mic status caption (“静音收音/恢复收音”) and repositioned `内容由 AI 生成` below the four-key control row.
+  - Tuned footer spacing so the four bottom controls sit lower to better match target visual alignment.
+  - Synced conversation/voice route callsites and UI tests to the single-mode voice screen contract.
+  - Updated parity/design/product docs to reflect the simplified voice-mode interaction model.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx app/__tests__/routing.test.tsx` (pass; includes existing React act warnings)
+- Risk:
+  - Voice mode no longer offers in-page transcript/dialogue view; users must return to conversation page to review full text history.
+  - Footer spacing is tuned against current target screenshots and may still need device-specific micro-adjustment on atypical aspect ratios.
+- Rollback:
+  - Revert the scoped UI/theme/test/doc files above to restore voice text-toggle behavior and previous footer layout.
+
 ## 2026-04-07 18:11 (Asia/Shanghai) - refactor(ui): visually refine voice session drawer design
 
 - Commit: pending

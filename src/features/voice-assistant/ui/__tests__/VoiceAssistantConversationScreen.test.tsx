@@ -209,9 +209,8 @@ describe('VoiceAssistantConversationScreen', () => {
     await waitFor(() => {
       expect(session.toggleVoice).toHaveBeenCalledTimes(1);
     });
-    fireEvent.press(screen.getByTestId('voice-switch-text-button'));
-    expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
-    expect(screen.getAllByText('你好，我在。').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('voice-switch-text-button')).toBeNull();
+    expect(screen.getByTestId('voice-avatar-scene')).toBeTruthy();
     fireEvent.press(screen.getByTestId('voice-exit-button'));
 
     await waitFor(() => {

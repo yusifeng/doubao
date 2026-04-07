@@ -1,7 +1,7 @@
 import { DrawerActions } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { View } from 'react-native';
 import { useVoiceAssistantRuntime } from '../../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 import { VoiceAssistantScreen } from '../../../src/features/voice-assistant/ui/VoiceAssistantScreen';
@@ -10,7 +10,6 @@ export default function VoiceRoute() {
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const session = useVoiceAssistantRuntime();
   const navigation = useNavigation();
-  const [displayMode, setDisplayMode] = useState<'avatar' | 'dialogue'>('avatar');
   const requestedConversationId =
     typeof params.conversationId === 'string' ? params.conversationId : null;
   const conversationId = requestedConversationId ?? session.activeConversationId ?? null;
@@ -101,10 +100,6 @@ export default function VoiceRoute() {
         session={session}
         embedded={false}
         autoStartOnMount
-        displayMode={displayMode}
-        onToggleDisplayMode={() => {
-          setDisplayMode((current) => (current === 'avatar' ? 'dialogue' : 'avatar'));
-        }}
         onOpenDrawer={() => navigation.dispatch(DrawerActions.openDrawer())}
         onExitVoice={() => {
           skipUnmountVoiceStopRef.current = true;

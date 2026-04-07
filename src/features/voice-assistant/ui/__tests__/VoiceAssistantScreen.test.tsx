@@ -144,7 +144,7 @@ describe('VoiceAssistantScreen', () => {
     expect(screen.queryByText('最近消息')).toBeNull();
     expect(screen.queryByText(/当前会话正在持续收听/)).toBeNull();
     expect(screen.getByText('你可以开始说话')).toBeTruthy();
-    expect(screen.getByText('静音收音（通话中）')).toBeTruthy();
+    expect(screen.queryByTestId('voice-switch-text-button')).toBeNull();
   });
 
   it('supports muting and unmuting voice input from the first control', async () => {
@@ -273,14 +273,12 @@ describe('VoiceAssistantScreen', () => {
   it('renders drawer and exit actions when callbacks exist', async () => {
     const onExitVoice = jest.fn();
     const onOpenDrawer = jest.fn();
-    const onToggleDisplayMode = jest.fn();
 
     renderScreen(
       <VoiceAssistantScreen
         session={createSession()}
         onExitVoice={onExitVoice}
         onOpenDrawer={onOpenDrawer}
-        onToggleDisplayMode={onToggleDisplayMode}
       />,
     );
 
@@ -288,11 +286,9 @@ describe('VoiceAssistantScreen', () => {
       expect(screen.getByText('选择情景')).toBeTruthy();
     });
     fireEvent.press(screen.getByTestId('voice-open-drawer-button'));
-    fireEvent.press(screen.getByTestId('voice-switch-text-button'));
     fireEvent.press(screen.getByTestId('voice-exit-button'));
 
     expect(onOpenDrawer).toHaveBeenCalledTimes(1);
-    expect(onToggleDisplayMode).toHaveBeenCalledTimes(1);
     expect(onExitVoice).toHaveBeenCalledTimes(1);
   });
 
@@ -304,34 +300,5 @@ describe('VoiceAssistantScreen', () => {
     await waitFor(() => {
       expect(session.toggleVoice).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('renders dialogue display mode with recent lines instead of avatar strip', async () => {
-    const session = createSession();
-    session.messages = [
-      {
-        id: 'msg-1',
-        conversationId: 'conv-1',
-        role: 'assistant',
-        content: '豆包你好。',
-        type: 'text',
-        createdAt: Date.now(),
-      },
-      {
-        id: 'msg-2',
-        conversationId: 'conv-1',
-        role: 'user',
-        content: '你好呀，今天有什么想聊的吗？',
-        type: 'text',
-        createdAt: Date.now() + 1,
-      },
-    ];
-
-    renderScreen(<VoiceAssistantScreen session={session} displayMode="dialogue" />);
-
-    expect(screen.getByTestId('voice-dialogue-scene')).toBeTruthy();
-    expect(await screen.findByText('豆包你好。')).toBeTruthy();
-    expect(screen.getByText('你好呀，今天有什么想聊的吗？')).toBeTruthy();
-    expect(screen.queryByText('你可以开始说话')).toBeTruthy();
   });
 });

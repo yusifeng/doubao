@@ -15,14 +15,6 @@ type VoiceAssistantScreenContentProps = {
   onOpenDrawer?: () => void;
   autoStartOnMount?: boolean;
   embedded?: boolean;
-  displayMode?: 'avatar' | 'dialogue';
-  onToggleDisplayMode?: () => void;
-};
-
-type DialogueLine = {
-  id: string;
-  text: string;
-  role: 'assistant' | 'user';
 };
 
 function VoiceAssistantScreenContent({
@@ -31,8 +23,6 @@ function VoiceAssistantScreenContent({
   onOpenDrawer,
   autoStartOnMount = false,
   embedded = false,
-  displayMode = 'avatar',
-  onToggleDisplayMode,
 }: VoiceAssistantScreenContentProps) {
   const insets = useSafeAreaInsets();
   const autoStartedRef = useRef(false);
@@ -57,41 +47,6 @@ function VoiceAssistantScreenContent({
     }
     return '你可以开始说话';
   }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning]);
-  const micActionLabel = useMemo(() => {
-    if (!isVoiceRunning) {
-      return '静音收音（通话中）';
-    }
-    return isVoiceInputMuted ? '恢复收音' : '静音收音';
-  }, [isVoiceInputMuted, isVoiceRunning]);
-  const dialogueLines = useMemo<DialogueLine[]>(() => {
-    const baseLines: DialogueLine[] = session.messages
-      .slice(-12)
-      .map<DialogueLine>((message) => ({
-        id: message.id,
-        text: message.content.trim(),
-        role: message.role === 'user' ? 'user' : 'assistant',
-      }))
-      .filter((message) => message.text.length > 0);
-    const lines: DialogueLine[] = [...baseLines];
-
-    if (session.pendingAssistantReply.trim()) {
-      lines.push({
-        id: 'pending-assistant-reply',
-        text: session.pendingAssistantReply.trim(),
-        role: 'assistant',
-      });
-    }
-
-    if (session.liveUserTranscript.trim()) {
-      lines.push({
-        id: 'live-user-transcript',
-        text: session.liveUserTranscript.trim(),
-        role: 'user',
-      });
-    }
-
-    return lines.slice(-12);
-  }, [session.liveUserTranscript, session.messages, session.pendingAssistantReply]);
 
   useEffect(() => {
     if (
@@ -124,7 +79,7 @@ function VoiceAssistantScreenContent({
 
   const safeTopInset = Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0);
   const rootPaddingTop = embedded ? 0 : safeTopInset + 30;
-  const rootPaddingBottom = embedded ? Math.max(20, insets.bottom + 8) : Math.max(30, insets.bottom + 16);
+  const rootPaddingBottom = embedded ? Math.max(14, insets.bottom + 4) : Math.max(18, insets.bottom + 8);
   const canInterruptByStatusText = isAssistantSpeaking && isVoiceRunning;
   const canStartByStatusText = !isVoiceRunning;
 
@@ -159,7 +114,6 @@ function VoiceAssistantScreenContent({
         className={voiceAssistantVoiceThemeClass.screen}
         style={{ paddingTop: rootPaddingTop, paddingBottom: rootPaddingBottom }}
       >
-
         <View className={voiceAssistantVoiceThemeClass.header}>
           <TouchableOpacity
             className={voiceAssistantVoiceThemeClass.headerButton}
@@ -172,87 +126,40 @@ function VoiceAssistantScreenContent({
             <VoiceAssistantIcon name="grid" size={18} color="#1F2937" />
             <Text className={voiceAssistantVoiceThemeClass.headerTitle}>选择情景</Text>
           </View>
-          <TouchableOpacity
-            className={voiceAssistantVoiceThemeClass.textModeButton}
-            onPress={() => {
-              onToggleDisplayMode?.();
-            }}
-            testID="voice-switch-text-button"
-          >
-            {displayMode === 'avatar' ? (
-              <Text className={voiceAssistantVoiceThemeClass.textModeButtonLabel}>字</Text>
-            ) : (
-              <VoiceAssistantIcon name="profile" size={20} color="#1F2937" strokeWidth={1.7} />
-            )}
-          </TouchableOpacity>
+          <View className={voiceAssistantVoiceThemeClass.headerActionSlot} />
         </View>
 
-        {displayMode === 'avatar' ? (
-          <View className={voiceAssistantVoiceThemeClass.body} testID="voice-avatar-scene">
-            <View
-              className={voiceAssistantVoiceThemeClass.avatarOuter}
-              style={voiceAssistantThemeStyle.voiceAvatarShadow}
-            >
-              <View className={voiceAssistantVoiceThemeClass.avatarInner}>
-                <View className={voiceAssistantVoiceThemeClass.avatarCore}>
-                  <View className="h-40 w-40 items-center justify-center rounded-full bg-[#CFE5FF]">
-                    <View className="h-32 w-32 items-center justify-center rounded-full bg-white">
-                      <VoiceAssistantIcon name="profile" size={68} color="#344054" strokeWidth={1.6} />
-                    </View>
+        <View className={voiceAssistantVoiceThemeClass.body} testID="voice-avatar-scene">
+          <View
+            className={voiceAssistantVoiceThemeClass.avatarOuter}
+            style={voiceAssistantThemeStyle.voiceAvatarShadow}
+          >
+            <View className={voiceAssistantVoiceThemeClass.avatarInner}>
+              <View className={voiceAssistantVoiceThemeClass.avatarCore}>
+                <View className="h-40 w-40 items-center justify-center rounded-full bg-[#CFE5FF]">
+                  <View className="h-32 w-32 items-center justify-center rounded-full bg-white">
+                    <VoiceAssistantIcon name="profile" size={68} color="#344054" strokeWidth={1.6} />
                   </View>
                 </View>
               </View>
             </View>
+          </View>
 
-            <View className={voiceAssistantVoiceThemeClass.statusDots}>
-              <View className={voiceAssistantVoiceThemeClass.statusDot} />
-              <View className={voiceAssistantVoiceThemeClass.statusDot} />
-              <View className={voiceAssistantVoiceThemeClass.statusDot} />
-            </View>
-            <TouchableOpacity
-              onPress={() => {
-                void handleStatusTextPress();
-              }}
-              disabled={!(canInterruptByStatusText || canStartByStatusText)}
-              testID="voice-status-text-trigger"
-            >
-              <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
-            </TouchableOpacity>
+          <View className={voiceAssistantVoiceThemeClass.statusDots}>
+            <View className={voiceAssistantVoiceThemeClass.statusDot} />
+            <View className={voiceAssistantVoiceThemeClass.statusDot} />
+            <View className={voiceAssistantVoiceThemeClass.statusDot} />
           </View>
-        ) : (
-          <View className={voiceAssistantVoiceThemeClass.dialogueBody} testID="voice-dialogue-scene">
-            <View className={voiceAssistantVoiceThemeClass.dialogueList}>
-              {dialogueLines.map((line) => (
-                <Text
-                  key={line.id}
-                  className={
-                    line.role === 'assistant'
-                      ? voiceAssistantVoiceThemeClass.dialogueLinePrimary
-                      : voiceAssistantVoiceThemeClass.dialogueLineSecondary
-                  }
-                >
-                  {line.text}
-                </Text>
-              ))}
-            </View>
-            <View className="items-center">
-              <View className={voiceAssistantVoiceThemeClass.statusDots}>
-                <View className={voiceAssistantVoiceThemeClass.statusDot} />
-                <View className={voiceAssistantVoiceThemeClass.statusDot} />
-                <View className={voiceAssistantVoiceThemeClass.statusDot} />
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  void handleStatusTextPress();
-                }}
-                disabled={!(canInterruptByStatusText || canStartByStatusText)}
-                testID="voice-status-text-trigger"
-              >
-                <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          <TouchableOpacity
+            onPress={() => {
+              void handleStatusTextPress();
+            }}
+            disabled={!(canInterruptByStatusText || canStartByStatusText)}
+            testID="voice-status-text-trigger"
+          >
+            <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
+          </TouchableOpacity>
+        </View>
 
         <View className={voiceAssistantVoiceThemeClass.footer}>
           <View className={voiceAssistantVoiceThemeClass.controlsRow}>
@@ -307,10 +214,8 @@ function VoiceAssistantScreenContent({
               <VoiceAssistantIcon name="close" size={28} color="#EF4444" />
             </TouchableOpacity>
           </View>
-
-          <Text className={voiceAssistantVoiceThemeClass.attribution}>内容由 AI 生成</Text>
         </View>
-        <Text className={voiceAssistantVoiceThemeClass.controlCaption}>{micActionLabel}</Text>
+        <Text className={voiceAssistantVoiceThemeClass.attribution}>内容由 AI 生成</Text>
       </View>
     </View>
   );
@@ -327,8 +232,6 @@ type VoiceAssistantScreenProps = {
   onOpenDrawer?: () => void;
   autoStartOnMount?: boolean;
   embedded?: boolean;
-  displayMode?: 'avatar' | 'dialogue';
-  onToggleDisplayMode?: () => void;
 };
 
 export function VoiceAssistantScreen({
@@ -337,8 +240,6 @@ export function VoiceAssistantScreen({
   onOpenDrawer,
   autoStartOnMount,
   embedded,
-  displayMode,
-  onToggleDisplayMode,
 }: VoiceAssistantScreenProps) {
   if (session) {
     return (
@@ -348,8 +249,6 @@ export function VoiceAssistantScreen({
         onOpenDrawer={onOpenDrawer}
         autoStartOnMount={autoStartOnMount}
         embedded={embedded ?? true}
-        displayMode={displayMode}
-        onToggleDisplayMode={onToggleDisplayMode}
       />
     );
   }

@@ -33,9 +33,6 @@ export function VoiceAssistantConversationScreen({
   onOpenDrawer,
 }: VoiceAssistantConversationScreenProps) {
   const [draft, setDraft] = useState("");
-  const [voiceDisplayMode, setVoiceDisplayMode] = useState<
-    "avatar" | "dialogue"
-  >("avatar");
   const voiceToggleInFlightRef = useRef(false);
   const previousModeRef = useRef<ConversationScreenMode | null>(null);
   const shouldRecoverVoiceAfterStopRef = useRef(false);
@@ -74,12 +71,6 @@ export function VoiceAssistantConversationScreen({
   ]);
 
   const canSend = draft.trim().length > 0;
-
-  useEffect(() => {
-    if (mode !== "voice") {
-      setVoiceDisplayMode("avatar");
-    }
-  }, [mode]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -370,12 +361,6 @@ export function VoiceAssistantConversationScreen({
               onExitVoice={() => onChangeMode("text")}
               onOpenDrawer={onOpenDrawer}
               autoStartOnMount={false}
-              displayMode={voiceDisplayMode}
-              onToggleDisplayMode={() => {
-                setVoiceDisplayMode((current) =>
-                  current === "avatar" ? "dialogue" : "avatar",
-                );
-              }}
             />
           </View>
         ) : null}
