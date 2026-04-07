@@ -26,6 +26,45 @@
 
 ## Entries
 
+## 2026-04-07 21:26 (Asia/Shanghai) - feat(voice-route): split immersive voice page and full-bleed safe area
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `app/_layout.tsx`
+  - `app/(chat)/_layout.tsx`
+  - `app/(chat)/index.tsx`
+  - `app/(chat)/conversation/[conversationId].tsx`
+  - `app/(chat)/voice/[conversationId].tsx`
+  - `app/index.tsx` (deleted)
+  - `app/conversation/[conversationId].tsx` (deleted)
+  - `app/voice/[conversationId].tsx` (deleted)
+  - `app/__tests__/routing.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantScreen.tsx`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.voiceToggle.ts`
+  - `src/core/theme/mappers.ts`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+- Summary:
+  - Introduced a dedicated voice route (`/voice/[conversationId]`) in the same stack group as chat routes so entering voice mode uses right-slide push navigation.
+  - Updated drawer routing to mount `(chat)` as one scene and preserved shared `conversationId` context between text and voice pages.
+  - Hardened voice-exit lifecycle with best-effort stop guarantees (`ensureVoiceStopped`) to prevent residual live voice sessions during fast navigation transitions.
+  - Reworked voice-screen immersive layout to full-bleed background across safe-area edges, plus transparent status-bar handling and adjusted top spacing.
+  - Synced active plan/spec/design docs with the new route model and immersive safe-area acceptance constraints.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx app/__tests__/routing.test.tsx` (pass; includes known React act warnings)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx app/__tests__/routing.test.tsx` (pass; includes known React act warnings)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass; no actionable findings)
+- Risk:
+  - Route-tree migration from root-level `index/conversation/voice` to `/(chat)` may impact any external deep-link assumptions tied to old file-based paths.
+  - Voice layout now depends on transparent status/navigation bar behavior; OEM-specific Android skins may need visual spot checks.
+- Rollback:
+  - Revert the scoped routing/runtime/UI/doc files above to restore previous root-level route structure and pre-immersion layout behavior.
+
 ## 2026-04-07 18:11 (Asia/Shanghai) - refactor(ui): visually refine voice session drawer design
 
 - Commit: pending

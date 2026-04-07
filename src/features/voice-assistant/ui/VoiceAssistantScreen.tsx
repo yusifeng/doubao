@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StatusBar, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import {
@@ -37,8 +37,12 @@ function VoiceAssistantScreenContent({
   const insets = useSafeAreaInsets();
   const autoStartedRef = useRef(false);
   const isVoiceRunning = session.isVoiceActive;
-  const isAssistantSpeakingByStatus = session.voiceCallPhase === 'speaking';
-  const isAssistantSpeaking = isVoiceRunning && isAssistantSpeakingByStatus;
+  const isAssistantSpeakingByPhase = session.voiceCallPhase === 'speaking';
+  const isAssistantSpeakingByStatus = session.status === 'speaking';
+  const isAssistantSpeakingByHint = session.voiceRuntimeHint.includes('播报');
+  const isAssistantSpeaking =
+    isVoiceRunning &&
+    (isAssistantSpeakingByPhase || isAssistantSpeakingByStatus || isAssistantSpeakingByHint);
   const isVoiceInputMuted = session.isVoiceInputMuted;
 
   const statusText = useMemo(() => {
@@ -53,22 +57,6 @@ function VoiceAssistantScreenContent({
     }
     return '你可以开始说话';
   }, [isAssistantSpeaking, isVoiceInputMuted, isVoiceRunning]);
-  const statusTextWithDebug = useMemo(() => {
-    const hintTag = session.voiceRuntimeHint.includes('播报')
-      ? '播报'
-      : session.voiceRuntimeHint.includes('听你说')
-      ? '听你说'
-      : session.voiceRuntimeHint.includes('静音')
-      ? '静音'
-      : '其他';
-    return `${statusText} (P=${session.status} H=${hintTag} S=${isAssistantSpeaking ? 1 : 0} E=${session.voiceDebugLastEvent})`;
-  }, [
-    isAssistantSpeaking,
-    session.status,
-    session.voiceDebugLastEvent,
-    session.voiceRuntimeHint,
-    statusText,
-  ]);
   const micActionLabel = useMemo(() => {
     if (!isVoiceRunning) {
       return '静音收音（通话中）';
@@ -134,8 +122,9 @@ function VoiceAssistantScreenContent({
     onExitVoice?.();
   };
 
-  const rootPaddingTop = embedded ? 0 : insets.top + 10;
-  const rootPaddingBottom = embedded ? Math.max(18, insets.bottom + 6) : Math.max(24, insets.bottom + 10);
+  const safeTopInset = Math.max(insets.top, Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0);
+  const rootPaddingTop = embedded ? 0 : safeTopInset + 30;
+  const rootPaddingBottom = embedded ? Math.max(20, insets.bottom + 8) : Math.max(30, insets.bottom + 16);
   const canInterruptByStatusText = isAssistantSpeaking && isVoiceRunning;
   const canStartByStatusText = !isVoiceRunning;
 
@@ -151,25 +140,25 @@ function VoiceAssistantScreenContent({
   };
 
   return (
-    <View
-      className={voiceAssistantVoiceThemeClass.safeArea}
-      style={{ paddingTop: rootPaddingTop, paddingBottom: rootPaddingBottom }}
-    >
-      <View className={voiceAssistantVoiceThemeClass.screen}>
-        <View className="absolute inset-0">
-          <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <Defs>
-              <LinearGradient id="voice-bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor="#FDE7F3" />
-                <Stop offset="48%" stopColor="#F7F1FF" />
-                <Stop offset="100%" stopColor="#E7F2FF" />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width="100" height="100" fill="url(#voice-bg)" />
-          </Svg>
-        </View>
-        <View className="absolute left-[-28] top-[120] h-64 w-64 rounded-full bg-white/25" />
-        <View className="absolute right-[-40] top-[420] h-72 w-72 rounded-full bg-white/20" />
+    <View className={voiceAssistantVoiceThemeClass.safeArea}>
+      <View className="absolute inset-0">
+        <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <Defs>
+            <LinearGradient id="voice-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor="#FDE7F3" />
+              <Stop offset="48%" stopColor="#F7F1FF" />
+              <Stop offset="100%" stopColor="#E7F2FF" />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100" height="100" fill="url(#voice-bg)" />
+        </Svg>
+      </View>
+      <View className="absolute left-[-28] top-[120] h-64 w-64 rounded-full bg-white/25" />
+      <View className="absolute right-[-40] top-[420] h-72 w-72 rounded-full bg-white/20" />
+      <View
+        className={voiceAssistantVoiceThemeClass.screen}
+        style={{ paddingTop: rootPaddingTop, paddingBottom: rootPaddingBottom }}
+      >
 
         <View className={voiceAssistantVoiceThemeClass.header}>
           <TouchableOpacity
@@ -227,7 +216,7 @@ function VoiceAssistantScreenContent({
               disabled={!(canInterruptByStatusText || canStartByStatusText)}
               testID="voice-status-text-trigger"
             >
-              <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusTextWithDebug}</Text>
+              <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -259,7 +248,7 @@ function VoiceAssistantScreenContent({
                 disabled={!(canInterruptByStatusText || canStartByStatusText)}
                 testID="voice-status-text-trigger"
               >
-                <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusTextWithDebug}</Text>
+                <Text className={voiceAssistantVoiceThemeClass.statusText}>{statusText}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -337,6 +326,7 @@ type VoiceAssistantScreenProps = {
   onExitVoice?: () => void;
   onOpenDrawer?: () => void;
   autoStartOnMount?: boolean;
+  embedded?: boolean;
   displayMode?: 'avatar' | 'dialogue';
   onToggleDisplayMode?: () => void;
 };
@@ -346,6 +336,7 @@ export function VoiceAssistantScreen({
   onExitVoice,
   onOpenDrawer,
   autoStartOnMount,
+  embedded,
   displayMode,
   onToggleDisplayMode,
 }: VoiceAssistantScreenProps) {
@@ -356,7 +347,7 @@ export function VoiceAssistantScreen({
         onExitVoice={onExitVoice}
         onOpenDrawer={onOpenDrawer}
         autoStartOnMount={autoStartOnMount}
-        embedded
+        embedded={embedded ?? true}
         displayMode={displayMode}
         onToggleDisplayMode={onToggleDisplayMode}
       />

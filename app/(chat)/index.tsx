@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { View } from 'react-native';
-import { useVoiceAssistantRuntime } from '../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
+import { useVoiceAssistantRuntime } from '../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 
 export default function HomeRoute() {
   const session = useVoiceAssistantRuntime();

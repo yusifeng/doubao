@@ -111,7 +111,7 @@ export const voiceAssistantBubbleThemeClass = {
 
 export const voiceAssistantVoiceThemeClass = {
   safeArea: 'flex-1 bg-[#FBF6FF]',
-  screen: 'flex-1 overflow-hidden bg-[#FBF6FF]',
+  screen: 'flex-1 overflow-hidden',
   blobBase: 'absolute rounded-full',
   header: 'flex-row items-center justify-between px-4 pb-2 pt-1',
   headerButton: 'h-9 w-9 items-center justify-center rounded-full bg-white/20',

@@ -88,6 +88,7 @@ export type UseTextChatResult = {
   supportsVoiceInputMute: boolean;
   isVoiceInputMuted: boolean;
   toggleVoice: () => Promise<void>;
+  ensureVoiceStopped?: () => Promise<void>;
   toggleVoiceInputMuted: () => Promise<void>;
   interruptVoiceOutput: () => Promise<void>;
   voiceModeLabel: string;
@@ -899,6 +900,10 @@ export function useTextChat(): UseTextChatResult {
     () => voiceToggleHandlers.toggleVoice(),
     [voiceToggleHandlers],
   );
+  const ensureVoiceStopped = useCallback(
+    () => voiceToggleHandlers.ensureVoiceStopped(),
+    [voiceToggleHandlers],
+  );
 
   const saveRuntimeConfig = useCallback(
     async (draft: RuntimeConfigDraft) => {
@@ -939,6 +944,7 @@ export function useTextChat(): UseTextChatResult {
     supportsVoiceInputMute,
     isVoiceInputMuted,
     toggleVoice,
+    ensureVoiceStopped,
     toggleVoiceInputMuted,
     interruptVoiceOutput,
     voiceModeLabel,

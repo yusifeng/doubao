@@ -2,25 +2,26 @@
 
 ## 目标
 
-将当前产品从“session 页 + 会话页 + 语音页”重构为“单一会话页 + 会话抽屉 + 文字/语音双模式”。
+将当前产品从“session 页 + 会话页 + 语音页”重构为“会话页 + 独立语音页 + 会话抽屉”，并确保文字/语音共享同一会话上下文。
 
 ## 本阶段约束
 
-- 主页面只有一个：当前会话页。
+- 主页面入口是当前会话页，语音通过独立路由页承载。
 - 文字模式与语音模式共享同一 `conversationId`、同一消息流、同一上下文。
 - 会话列表不再是独立 route，只作为会话页左侧抽屉存在。
 - 会话抽屉采用 `@react-navigation/drawer` / Expo Router Drawer 承载，移动端手势与开合动画由导航层负责。
-- `/voice/[conversationId]` 仅保留为兼容入口，并重定向到 `/conversation/[conversationId]?mode=voice`。
+- `/voice/[conversationId]` 作为语音主路由页，`/conversation/[conversationId]?mode=voice` 仅保留兼容跳转。
 - 本阶段不新增设置页、不新增模型或音色 UI。
 
 ## 实现要点
 
 - `/` 启动后直接进入最近一次活动会话；若不存在活动会话，沿用当前 bootstrap 自动创建默认会话。
-- `/conversation/[conversationId]` 成为唯一主产品页面，通过 `mode=text|voice` 驱动页面内部形态。
+- `/conversation/[conversationId]` 承载文字会话形态。
+- `/voice/[conversationId]` 承载语音沉浸形态并复用同一 runtime 会话。
 - 会话页负责：
   - 消息流展示
   - 文本输入发送
-  - 语音模式切换
+  - 语音路由入口
   - 会话抽屉开关
   - 新建会话 / 切换会话
 - 进入语音模式后自动开始收听，不再要求用户额外点击一次“开始通话”。

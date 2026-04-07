@@ -211,6 +211,62 @@ export function createVoiceToggleHandlers(deps: {
     }
   };
 
+  const ensureVoiceStopped = async () => {
+    if (!deps.activeConversationId) {
+      return;
+    }
+
+    if (deps.useAndroidDialogRuntime) {
+      await deps.withCallLifecycleLock(async () => {
+        const isVoiceCallOngoing =
+          deps.voiceLoopActiveRef.current ||
+          (deps.realtimeCallPhaseRef.current !== 'idle' &&
+            deps.realtimeCallPhaseRef.current !== 'stopping');
+        if (!isVoiceCallOngoing) {
+          return;
+        }
+        deps.updateRealtimeCallPhase('stopping');
+        deps.voiceLoopActiveRef.current = false;
+        await deps.stopAndroidDialogConversation();
+        deps.resetRealtimeCallState();
+        deps.setConnectivityHint('Android Dialog SDK 通话已挂断');
+        await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
+        await deps.syncConversationState();
+      });
+      return;
+    }
+
+    if (deps.effectiveVoicePipelineMode === 'realtime_audio') {
+      await deps.withCallLifecycleLock(async () => {
+        const isRealtimeCallOngoing =
+          (deps.realtimeCallPhaseRef.current !== 'idle' &&
+            deps.realtimeCallPhaseRef.current !== 'stopping') ||
+          deps.isVoiceActive;
+        if (!isRealtimeCallOngoing) {
+          return;
+        }
+        await deps.stopRealtimeDemoCall();
+      });
+      return;
+    }
+
+    if (!deps.isTestEnv && deps.effectiveVoicePipelineMode === 'asr_text') {
+      if (!deps.isVoiceActive && !deps.voiceLoopActiveRef.current && !deps.voiceLoopRunningRef.current) {
+        return;
+      }
+      await deps.stopHandsFreeVoiceLoop();
+      return;
+    }
+
+    if (!deps.isVoiceActive) {
+      return;
+    }
+    deps.setIsVoiceActive(false);
+    await deps.providers.audio.abortRecognition();
+    await deps.updateConversationRuntimeStatus('idle');
+    await deps.syncConversationState();
+  };
+
   const voiceToggleLabel = (() => {
     if (deps.useAndroidDialogRuntime) {
       switch (deps.realtimeCallPhase) {
@@ -300,6 +356,7 @@ export function createVoiceToggleHandlers(deps: {
     interruptVoiceOutput,
     toggleVoiceInputMuted,
     toggleVoice,
+    ensureVoiceStopped,
     voiceToggleLabel,
     voiceRuntimeHint,
   };

@@ -89,12 +89,10 @@ function RootDrawerNavigator() {
           width: drawerWidth,
           backgroundColor: '#FFFFFF',
         },
-        sceneStyle: { backgroundColor: '#FFF4E8' },
+        sceneStyle: { backgroundColor: 'transparent' },
       }}
     >
-      <Drawer.Screen name="index" />
-      <Drawer.Screen name="conversation/[conversationId]" />
-      <Drawer.Screen name="voice/[conversationId]" />
+      <Drawer.Screen name="(chat)" />
       <Drawer.Screen name="settings" />
     </Drawer>
   );

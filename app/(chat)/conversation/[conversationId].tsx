@@ -2,15 +2,15 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 import { DrawerActions } from '@react-navigation/native';
-import { VoiceAssistantConversationScreen } from '../../src/features/voice-assistant/ui/VoiceAssistantConversationScreen';
-import { useVoiceAssistantRuntime } from '../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
+import { VoiceAssistantConversationScreen } from '../../../src/features/voice-assistant/ui/VoiceAssistantConversationScreen';
+import { useVoiceAssistantRuntime } from '../../../src/features/voice-assistant/runtime/VoiceAssistantRuntimeProvider';
 
 export default function ConversationRoute() {
   const params = useLocalSearchParams<{ conversationId?: string; mode?: string }>();
   const session = useVoiceAssistantRuntime();
   const navigation = useNavigation();
   const requestedConversationId = typeof params.conversationId === 'string' ? params.conversationId : null;
-  const mode = params.mode === 'voice' ? 'voice' : 'text';
+  const legacyMode = params.mode === 'voice' ? 'voice' : 'text';
 
   const hasRequestedConversation = useMemo(
     () =>
@@ -25,10 +25,18 @@ export default function ConversationRoute() {
       return;
     }
 
+    if (legacyMode === 'voice') {
+      router.replace({
+        pathname: '/voice/[conversationId]',
+        params: { conversationId: requestedConversationId },
+      });
+      return;
+    }
+
     if (!hasRequestedConversation) {
       router.replace({
         pathname: '/conversation/[conversationId]',
-        params: { conversationId: session.activeConversationId, mode },
+        params: { conversationId: session.activeConversationId },
       });
       return;
     }
@@ -36,21 +44,33 @@ export default function ConversationRoute() {
     if (requestedConversationId !== session.activeConversationId) {
       void session.selectConversation(requestedConversationId);
     }
-  }, [hasRequestedConversation, mode, requestedConversationId, session]);
+  }, [hasRequestedConversation, legacyMode, requestedConversationId, session]);
 
   if (!session.activeConversationId) {
     return <View className="flex-1 bg-[#FBFCFE]" testID="conversation-route-loading" />;
   }
 
+  if (legacyMode === 'voice' && requestedConversationId) {
+    return <View className="flex-1 bg-[#FBFCFE]" testID="conversation-route-redirecting-voice" />;
+  }
+
   return (
     <VoiceAssistantConversationScreen
       session={session}
-      mode={mode}
+      mode="text"
       onOpenDrawer={() => navigation.dispatch(DrawerActions.openDrawer())}
       onChangeMode={(nextMode) => {
+        if (nextMode === 'voice') {
+          router.push({
+            pathname: '/voice/[conversationId]',
+            params: { conversationId: session.activeConversationId ?? requestedConversationId ?? 'conv-1' },
+          });
+          return;
+        }
+
         router.replace({
           pathname: '/conversation/[conversationId]',
-          params: { conversationId: session.activeConversationId ?? requestedConversationId ?? 'conv-1', mode: nextMode },
+          params: { conversationId: session.activeConversationId ?? requestedConversationId ?? 'conv-1' },
         });
       }}
     />

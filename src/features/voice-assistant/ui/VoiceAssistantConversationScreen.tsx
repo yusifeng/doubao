@@ -298,7 +298,11 @@ export function VoiceAssistantConversationScreen({
                 onPress={() =>
                   onChangeMode(mode === "voice" ? "text" : "voice")
                 }
-                testID="conversation-mode-toggle-button"
+                testID={
+                  mode === "voice"
+                    ? "conversation-close-voice-button"
+                    : "conversation-open-voice-button"
+                }
               >
                 <VoiceAssistantIcon
                   name={mode === "voice" ? "text" : "phone"}

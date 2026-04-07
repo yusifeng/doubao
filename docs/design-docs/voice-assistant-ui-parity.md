@@ -34,7 +34,10 @@
 
 ### Voice mode
 
-- 语音模式是会话页的沉浸覆盖态，不再是单独产品心智。
+- 语音模式由会话页电话按钮 `push` 到独立路由页（`/voice/[conversationId]`），而不是会话页内覆盖层。
+- 虽然是独立路由页，但必须继续共享同一 `conversationId`、同一消息流和同一 runtime 会话上下文。
+- 语音页背景必须覆盖顶部/底部安全区（full-bleed），避免出现安全区纯色块导致的上下边界割裂。
+- 语音页状态栏区域需保持沉浸式透明叠加，头部文案在安全区基础上继续下移，避免贴顶。
 - 延续 `2003:606` 的粉紫蓝氛围背景、大头像、状态点与 transcript 胶囊。
 - 切到语音模式后自动开始收听，不再要求用户二次点击“开始通话”。
 - 语音模式内部再区分两种展示形态：
@@ -67,7 +70,7 @@
 ## Current Acceptance Checklist
 
 - [x] `/` redirects directly into the active conversation instead of rendering a standalone session page.
-- [x] Conversation route now owns both text mode and voice mode.
+- [x] Conversation route keeps text mode and uses route navigation to enter voice mode.
 - [x] Session list is embedded as a left drawer backed by real local conversations.
-- [x] Voice mode remains a full-screen immersive scene but is treated as the same conversation surface.
+- [x] Voice mode renders on `/voice/[conversationId]` as an immersive full-screen scene while preserving same-conversation context.
 - [x] NativeWind is still the dominant styling mechanism.
