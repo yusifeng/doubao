@@ -26,6 +26,27 @@
 
 ## Entries
 
+## 2026-04-08 04:53 (CST) - fix(session-switch): make route the single source for select intent
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/ui/useConversationSwitchCoordinator.ts`
+  - `src/features/voice-assistant/ui/__tests__/useConversationSwitchCoordinator.test.ts`
+  - `docs/commit-history.md`
+- Summary:
+  - Removed direct runtime `selectConversation` mutation from drawer/session select intent; selection now stops voice first and then navigates, with URL作为唯一会话切换入口。
+  - Preserved intent queue coalescing and updated regression tests to assert route-first behavior under deferred and burst switch interactions.
+  - Closed the observed `A -> B -> A -> B` flip path caused by pre-navigation runtime mutation racing with route-to-runtime synchronization.
+- Tests:
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/useConversationSwitchCoordinator.test.ts app/__tests__/routing.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts` (pass)
+  - `pnpm exec tsc --noEmit` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings)
+- Risk:
+  - Select intent now fully relies on route-layer synchronization to finalize runtime active conversation; future changes to route-sync hook must keep this contract.
+- Rollback:
+  - Revert the scoped coordinator + test changes above to restore prior runtime-first selection behavior.
+
 ## 2026-04-08 04:36 (CST) - fix(session-switch): unify drawer switch flow and stale selection guards
 
 - Commit: pending

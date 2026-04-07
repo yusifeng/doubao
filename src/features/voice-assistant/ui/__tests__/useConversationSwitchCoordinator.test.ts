@@ -18,17 +18,16 @@ function createDeferred<T>() {
 
 function createSessionMock(overrides?: Partial<UseTextChatResult>) {
   return {
-    activeConversationId: 'conv-a',
     isVoiceActive: false,
     toggleVoice: jest.fn(async () => {}),
     ensureVoiceStopped: jest.fn(async () => {}),
-    selectConversation: jest.fn(async () => true),
     createConversation: jest.fn(async () => 'conv-new'),
     ...overrides,
   } as Pick<
     UseTextChatResult,
-    'activeConversationId' | 'isVoiceActive' | 'toggleVoice' | 'ensureVoiceStopped' | 'selectConversation' | 'createConversation'
-  >;
+    'isVoiceActive' | 'toggleVoice' | 'ensureVoiceStopped' | 'createConversation'
+  > &
+    Partial<UseTextChatResult>;
 }
 
 describe('useConversationSwitchCoordinator', () => {
@@ -49,12 +48,7 @@ describe('useConversationSwitchCoordinator', () => {
 
   it('closes drawer before executing switch intent on chat routes', async () => {
     const order: string[] = [];
-    const session = createSessionMock({
-      selectConversation: jest.fn(async () => {
-        order.push('select');
-        return true;
-      }),
-    });
+    const session = createSessionMock();
     const router = {
       setParams: jest.fn(() => {
         order.push('setParams');
@@ -78,9 +72,12 @@ describe('useConversationSwitchCoordinator', () => {
     });
 
     await waitFor(() => {
-      expect(session.selectConversation).toHaveBeenCalledWith('conv-b');
+      expect(router.setParams).toHaveBeenCalledWith({
+        conversationId: 'conv-b',
+        mode: 'text',
+      });
     });
-    expect(order).toEqual(['close', 'select', 'setParams']);
+    expect(order).toEqual(['close', 'setParams']);
     expect(router.replace).not.toHaveBeenCalled();
   });
 
@@ -121,13 +118,15 @@ describe('useConversationSwitchCoordinator', () => {
   });
 
   it('coalesces pending intents and applies the latest request after in-flight one', async () => {
-    const firstSelectDeferred = createDeferred<boolean>();
+    const firstStopDeferred = createDeferred<void>();
+    let stopCall = 0;
     const session = createSessionMock({
-      selectConversation: jest.fn(async (conversationId: string) => {
-        if (conversationId === 'conv-b') {
-          return firstSelectDeferred.promise;
+      isVoiceActive: true,
+      ensureVoiceStopped: jest.fn(async () => {
+        stopCall += 1;
+        if (stopCall === 1) {
+          await firstStopDeferred.promise;
         }
-        return true;
       }),
     });
     const router = {
@@ -153,17 +152,20 @@ describe('useConversationSwitchCoordinator', () => {
     });
 
     await act(async () => {
-      firstSelectDeferred.resolve(true);
+      firstStopDeferred.resolve();
       await Promise.all([firstIntentPromise!, skippedIntentPromise!, latestIntentPromise!]);
     });
 
-    expect(session.selectConversation).toHaveBeenNthCalledWith(1, 'conv-b');
-    expect(session.selectConversation).toHaveBeenNthCalledWith(2, 'conv-d');
-    expect(session.selectConversation).toHaveBeenCalledTimes(2);
+    expect(session.ensureVoiceStopped).toHaveBeenCalledTimes(2);
+    expect(router.replace).toHaveBeenNthCalledWith(1, {
+      pathname: '/conversation/[conversationId]',
+      params: { conversationId: 'conv-b', mode: 'text' },
+    });
     expect(router.replace).toHaveBeenLastCalledWith({
       pathname: '/conversation/[conversationId]',
       params: { conversationId: 'conv-d', mode: 'text' },
     });
+    expect(router.replace).toHaveBeenCalledTimes(2);
   });
 
   it('uses latest pathname when deferred drawer action executes', async () => {
@@ -173,9 +175,7 @@ describe('useConversationSwitchCoordinator', () => {
       return { cancel: jest.fn() };
     }) as any);
 
-    const session = createSessionMock({
-      selectConversation: jest.fn(async () => true),
-    });
+    const session = createSessionMock();
     const router = {
       setParams: jest.fn(),
       replace: jest.fn(),
@@ -217,10 +217,7 @@ describe('useConversationSwitchCoordinator', () => {
   });
 
   it('navigates to conversation page when selecting current session from settings', async () => {
-    const session = createSessionMock({
-      activeConversationId: 'conv-a',
-      selectConversation: jest.fn(async () => true),
-    });
+    const session = createSessionMock();
     const router = {
       setParams: jest.fn(),
       replace: jest.fn(),
@@ -245,6 +242,5 @@ describe('useConversationSwitchCoordinator', () => {
         params: { conversationId: 'conv-a', mode: 'text' },
       });
     });
-    expect(session.selectConversation).not.toHaveBeenCalled();
   });
 });

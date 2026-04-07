@@ -12,11 +12,9 @@ type ConversationRouter = {
 
 type ConversationSwitchSession = Pick<
   UseTextChatResult,
-  | 'activeConversationId'
   | 'isVoiceActive'
   | 'toggleVoice'
   | 'ensureVoiceStopped'
-  | 'selectConversation'
   | 'createConversation'
 >;
 
@@ -42,7 +40,6 @@ export function useConversationSwitchCoordinator({
   session,
 }: UseConversationSwitchCoordinatorArgs) {
   const pathnameRef = useRef(pathname);
-  const activeConversationIdRef = useRef<string | null>(session.activeConversationId);
   const isVoiceActiveRef = useRef(session.isVoiceActive);
   const pendingIntentRef = useRef<PendingIntentEntry | null>(null);
   const drainingIntentQueueRef = useRef(false);
@@ -50,10 +47,6 @@ export function useConversationSwitchCoordinator({
   useEffect(() => {
     pathnameRef.current = pathname;
   }, [pathname]);
-
-  useEffect(() => {
-    activeConversationIdRef.current = session.activeConversationId;
-  }, [session.activeConversationId]);
 
   useEffect(() => {
     isVoiceActiveRef.current = session.isVoiceActive;
@@ -85,24 +78,10 @@ export function useConversationSwitchCoordinator({
 
   const executeIntent = useCallback(async (intent: ConversationIntent) => {
     if (intent.type === 'select') {
-      if (intent.conversationId === activeConversationIdRef.current) {
-        await stopVoiceIfNeeded();
-        navigateToConversation(intent.conversationId);
-        return;
-      }
-
+      // Route is the single source of truth for conversation selection.
+      // Avoid mutating runtime activeConversationId before URL changes to prevent A<->B ping-pong.
       await stopVoiceIfNeeded();
-
-      const changed = await session.selectConversation(intent.conversationId);
-      if (changed) {
-        navigateToConversation(intent.conversationId);
-        return;
-      }
-
-      const fallbackConversationId = activeConversationIdRef.current;
-      if (fallbackConversationId) {
-        navigateToConversation(fallbackConversationId);
-      }
+      navigateToConversation(intent.conversationId);
       return;
     }
 
@@ -112,7 +91,6 @@ export function useConversationSwitchCoordinator({
   }, [
     navigateToConversation,
     session.createConversation,
-    session.selectConversation,
     stopVoiceIfNeeded,
   ]);
 
