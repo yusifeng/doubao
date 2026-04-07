@@ -195,6 +195,12 @@ describe('useTextChat android dialog sdk flow', () => {
     expect(mockDialogPrepare).toHaveBeenCalledTimes(1);
     expect(mockDialogPrepare).toHaveBeenCalledWith({ dialogWorkMode: 'default' });
     expect(mockDialogStartConversation).toHaveBeenCalledTimes(1);
+    expect(mockDialogStartConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputMode: 'text',
+        characterManifest: 'default prompt',
+      }),
+    );
     expect(mockDialogSendTextQuery).toHaveBeenCalledWith('测试文字模式');
     expect(result.current.messages.some((message) => message.role === 'user' && message.content === '测试文字模式')).toBe(true);
 
@@ -551,6 +557,68 @@ describe('useTextChat android dialog sdk flow', () => {
         ),
       ).toBe(true);
       expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
+  it('deduplicates repeated chat_final events for the same platform reply turn', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-chat-final-dedupe');
+      mockDialogListener?.({
+        type: 'asr_start',
+        sessionId,
+        questionId: 'q-dup',
+      });
+      mockDialogListener?.({
+        type: 'asr_partial',
+        text: '你好',
+        sessionId,
+        questionId: 'q-dup',
+      });
+      mockDialogListener?.({
+        type: 'asr_final',
+        text: '你好',
+        sessionId,
+        questionId: 'q-dup',
+      });
+      mockDialogListener?.({
+        type: 'chat_partial',
+        text: '这是完整回复',
+        sessionId,
+        questionId: 'q-dup',
+        replyId: 'r-dup',
+      });
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这是完整回复',
+        sessionId,
+        questionId: 'q-dup',
+        replyId: 'r-dup',
+        nativeMessageType: '559',
+      });
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '这是',
+        sessionId,
+        questionId: 'q-dup',
+        replyId: 'r-dup',
+        nativeMessageType: '559',
+      });
+    });
+
+    await waitFor(() => {
+      const assistantMessages = result.current.messages.filter((message) => message.role === 'assistant');
+      expect(assistantMessages.filter((message) => message.content === '这是完整回复')).toHaveLength(1);
+      expect(assistantMessages.some((message) => message.content === '这是')).toBe(false);
     });
   });
 

@@ -14,6 +14,9 @@ type LifecycleDeps = {
   androidDialogClientTtsSelectionReadyRef: { current: boolean };
   androidCustomClientTtsStreamStartedRef: { current: boolean };
   androidReplyGenerationRef: { current: number };
+  androidPlatformFinalTextByTurnKeyRef: { current: Map<string, string> };
+  androidPlatformFinalInFlightTurnKeysRef: { current: Set<string> };
+  androidPlatformFinalPendingTextByTurnKeyRef: { current: Map<string, string> };
   androidRetiredSessionIdsRef: { current: string[] };
   voiceLoopActiveRef: { current: boolean };
   rememberRetiredAndroidDialogSession: (sessionId?: string | null) => void;
@@ -28,6 +31,58 @@ type LifecycleDeps = {
   updateConversationRuntimeStatus: (status: any, options?: { refreshConversations?: boolean }) => Promise<void>;
   logIgnoredAndroidDialogEvent: (reason: string) => void;
 };
+
+const MAX_PLATFORM_FINAL_TEXT_CACHE_SIZE = 120;
+
+function resolvePlatformReplyTurnKey(
+  event: DialogEngineEvent,
+  fallbackConversationId: string | null,
+): string | null {
+  const replyId = event.replyId?.trim();
+  if (replyId) {
+    return `reply:${replyId}`;
+  }
+  const questionId = event.questionId?.trim();
+  if (questionId) {
+    return `question:${questionId}`;
+  }
+  const traceId = event.traceId?.trim();
+  if (traceId) {
+    return `trace:${traceId}`;
+  }
+  if (event.sessionId || typeof event.turnIndex === 'number' || fallbackConversationId) {
+    return `session:${event.sessionId ?? 'unknown'}:turn:${event.turnIndex ?? 'unknown'}:conversation:${fallbackConversationId ?? 'unknown'}`;
+  }
+  return null;
+}
+
+function rememberPlatformFinalTextByTurnKey(cache: Map<string, string>, key: string, text: string) {
+  cache.delete(key);
+  cache.set(key, text);
+  if (cache.size <= MAX_PLATFORM_FINAL_TEXT_CACHE_SIZE) {
+    return;
+  }
+  const oldestKey = cache.keys().next().value;
+  if (typeof oldestKey === 'string') {
+    cache.delete(oldestKey);
+  }
+}
+
+function mergePlatformFinalTextCandidate(currentText: string, incomingText: string): string {
+  if (!incomingText) {
+    return currentText;
+  }
+  if (!currentText) {
+    return incomingText;
+  }
+  if (incomingText.includes(currentText)) {
+    return incomingText;
+  }
+  if (currentText.includes(incomingText)) {
+    return currentText;
+  }
+  return incomingText.length >= currentText.length ? incomingText : currentText;
+}
 
 export function guardAndroidDialogSession(
   event: DialogEngineEvent,
@@ -66,6 +121,9 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
       deps.androidDialogClientTtsSelectionPromiseRef.current = null;
       deps.androidDialogClientTtsSelectionReadyRef.current = false;
       deps.androidCustomClientTtsStreamStartedRef.current = false;
+      deps.androidPlatformFinalTextByTurnKeyRef.current.clear();
+      deps.androidPlatformFinalInFlightTurnKeysRef.current.clear();
+      deps.androidPlatformFinalPendingTextByTurnKeyRef.current.clear();
       deps.clearTurnTrace();
       deps.dispatchDialogOrchestrator({
         type: 'session_started',
@@ -104,6 +162,9 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
       deps.androidDialogClientTtsSelectionPromiseRef.current = null;
       deps.androidDialogClientTtsSelectionReadyRef.current = false;
       deps.androidCustomClientTtsStreamStartedRef.current = false;
+      deps.androidPlatformFinalTextByTurnKeyRef.current.clear();
+      deps.androidPlatformFinalInFlightTurnKeysRef.current.clear();
+      deps.androidPlatformFinalPendingTextByTurnKeyRef.current.clear();
       deps.recordAudit('session.stopped');
       deps.clearTurnTrace();
       deps.setConnectivityHint('Android Dialog SDK 引擎已停止');
@@ -458,56 +519,113 @@ export function handleAndroidDialogPayloadEvent(
         return true;
       }
 
+      const finalConversationId = deps.androidDialogConversationIdRef.current ?? deps.activeConversationId;
+      const draftText = finalizeOfficialS2SReply(
+        event.text,
+        deps.androidAssistantDraftRef.current,
+        deps.pendingAssistantReply,
+      ).trim();
+      const finalText = sanitizeAssistantText(draftText);
+      const finalTurnKey = resolvePlatformReplyTurnKey(event, finalConversationId);
+      if (finalTurnKey) {
+        const inFlightTurnKeys = deps.androidPlatformFinalInFlightTurnKeysRef.current as Set<string>;
+        const pendingTextByTurnKey = deps.androidPlatformFinalPendingTextByTurnKeyRef.current as Map<string, string>;
+        const mergedPendingText = mergePlatformFinalTextCandidate(
+          pendingTextByTurnKey.get(finalTurnKey) ?? '',
+          finalText,
+        );
+        pendingTextByTurnKey.set(finalTurnKey, mergedPendingText);
+        if (inFlightTurnKeys.has(finalTurnKey)) {
+          deps.providers.observability.log('info', 'coalesce platform chat_final while finalization is in-flight', {
+            ...deps.buildDialogLogContext({
+              finalTurnKey,
+              textLength: finalText.length,
+              mergedTextLength: mergedPendingText.length,
+            }),
+          });
+          return true;
+        }
+        const previousFinalText = (deps.androidPlatformFinalTextByTurnKeyRef.current as Map<string, string>).get(finalTurnKey);
+        if (
+          previousFinalText &&
+          (!finalText ||
+            isSameAssistantText(previousFinalText, finalText) ||
+            previousFinalText.includes(finalText))
+        ) {
+          deps.providers.observability.log('info', 'drop duplicate platform chat_final after turn has already been finalized', {
+            ...deps.buildDialogLogContext({
+              finalTurnKey,
+              textLength: finalText.length,
+              previousTextLength: previousFinalText.length,
+            }),
+          });
+          return true;
+        }
+        inFlightTurnKeys.add(finalTurnKey);
+      }
+
       void (async () => {
-        const finalConversationId = deps.androidDialogConversationIdRef.current ?? deps.activeConversationId;
-        deps.androidReplyGenerationRef.current += 1;
-        deps.dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
-        const draftText = finalizeOfficialS2SReply(
-          event.text,
-          deps.androidAssistantDraftRef.current,
-          deps.pendingAssistantReply,
-        ).trim();
-        const finalText = sanitizeAssistantText(draftText);
-        deps.recordAudit('reply.platform.final', { extra: { textLength: finalText.length } });
-        deps.setLiveUserTranscript('');
-        deps.setPendingAssistantReply('');
-        deps.androidAssistantDraftRef.current = '';
-        if (finalConversationId && finalText) {
-          const currentMessages = await deps.repo.listMessages(finalConversationId);
-          const lastMessage = currentMessages[currentMessages.length - 1];
-          if (!(lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, finalText))) {
-            await deps.repo.appendMessage(finalConversationId, {
-              conversationId: finalConversationId,
-              role: 'assistant',
-              content: finalText,
-              type: deps.voiceLoopActiveRef.current ? 'audio' : 'text',
-            });
+        try {
+          deps.androidReplyGenerationRef.current += 1;
+          deps.dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
+          const mergedFinalText = sanitizeAssistantText(
+            (finalTurnKey
+              ? deps.androidPlatformFinalPendingTextByTurnKeyRef.current.get(finalTurnKey)
+              : finalText) ?? finalText,
+          );
+          deps.recordAudit('reply.platform.final', { extra: { textLength: mergedFinalText.length } });
+          deps.setLiveUserTranscript('');
+          deps.setPendingAssistantReply('');
+          deps.androidAssistantDraftRef.current = '';
+          if (finalConversationId && mergedFinalText) {
+            const currentMessages = await deps.repo.listMessages(finalConversationId);
+            const lastMessage = currentMessages[currentMessages.length - 1];
+            if (!(lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, mergedFinalText))) {
+              await deps.repo.appendMessage(finalConversationId, {
+                conversationId: finalConversationId,
+                role: 'assistant',
+                content: mergedFinalText,
+                type: deps.voiceLoopActiveRef.current ? 'audio' : 'text',
+              });
+            }
           }
-        }
-        deps.dispatchDialogOrchestrator({
-          type: 'draft_reply_finalized',
-          persisted: Boolean(finalConversationId && finalText),
-        });
-        if (deps.voiceLoopActiveRef.current && deps.androidDialogModeRef.current === 'voice') {
-          if (deps.androidPlayerSpeakingRef.current) {
-            deps.updateRealtimeCallPhase('speaking');
-            deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'speaking' });
-            await deps.updateConversationRuntimeStatus('speaking', { refreshConversations: true });
+          if (finalTurnKey && mergedFinalText) {
+            rememberPlatformFinalTextByTurnKey(
+              deps.androidPlatformFinalTextByTurnKeyRef.current,
+              finalTurnKey,
+              mergedFinalText,
+            );
+          }
+          deps.dispatchDialogOrchestrator({
+            type: 'draft_reply_finalized',
+            persisted: Boolean(finalConversationId && mergedFinalText),
+          });
+          if (deps.voiceLoopActiveRef.current && deps.androidDialogModeRef.current === 'voice') {
+            if (deps.androidPlayerSpeakingRef.current) {
+              deps.updateRealtimeCallPhase('speaking');
+              deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'speaking' });
+              await deps.updateConversationRuntimeStatus('speaking', { refreshConversations: true });
+            } else {
+              deps.updateRealtimeListeningState('ready');
+              deps.updateRealtimeCallPhase('listening');
+              deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'listening' });
+              await deps.updateConversationRuntimeStatus('listening', { refreshConversations: true });
+            }
           } else {
-            deps.updateRealtimeListeningState('ready');
-            deps.updateRealtimeCallPhase('listening');
-            deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'listening' });
-            await deps.updateConversationRuntimeStatus('listening', { refreshConversations: true });
+            await deps.stopAndroidDialogConversation();
+            deps.resetRealtimeCallState();
+            await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
           }
-        } else {
-          await deps.stopAndroidDialogConversation();
-          deps.resetRealtimeCallState();
-          await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
-        }
-        if (finalConversationId === deps.activeConversationId && deps.activeConversationId) {
-          await deps.syncConversationState();
-        } else {
-          deps.setConversations(await deps.repo.listConversations());
+          if (finalConversationId === deps.activeConversationId && deps.activeConversationId) {
+            await deps.syncConversationState();
+          } else {
+            deps.setConversations(await deps.repo.listConversations());
+          }
+        } finally {
+          if (finalTurnKey) {
+            deps.androidPlatformFinalPendingTextByTurnKeyRef.current.delete(finalTurnKey);
+            deps.androidPlatformFinalInFlightTurnKeysRef.current.delete(finalTurnKey);
+          }
         }
       })();
       return true;
@@ -584,6 +702,9 @@ export function createAndroidDialogEventHandler(deps: any) {
         androidDialogClientTtsSelectionReadyRef: deps.androidDialogClientTtsSelectionReadyRef,
         androidCustomClientTtsStreamStartedRef: deps.androidCustomClientTtsStreamStartedRef,
         androidReplyGenerationRef: deps.androidReplyGenerationRef,
+        androidPlatformFinalTextByTurnKeyRef: deps.androidPlatformFinalTextByTurnKeyRef,
+        androidPlatformFinalInFlightTurnKeysRef: deps.androidPlatformFinalInFlightTurnKeysRef,
+        androidPlatformFinalPendingTextByTurnKeyRef: deps.androidPlatformFinalPendingTextByTurnKeyRef,
         androidRetiredSessionIdsRef: deps.androidRetiredSessionIdsRef,
         voiceLoopActiveRef: deps.voiceLoopActiveRef,
         rememberRetiredAndroidDialogSession: deps.rememberRetiredAndroidDialogSession,

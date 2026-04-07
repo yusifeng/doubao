@@ -24,6 +24,7 @@ const mockFinishSession = jest.fn<Promise<void>, []>();
 const mockFinishConnection = jest.fn<Promise<void>, []>();
 const mockInterrupt = jest.fn<Promise<void>, []>();
 const mockDisconnect = jest.fn<Promise<void>, []>();
+const mockSendTextQuery = jest.fn<Promise<string>, [string]>();
 const mockSendAudioFrame = jest.fn<Promise<void>, [Uint8Array]>();
 const mockWaitForAssistantAudioChunk = jest.fn<Promise<Uint8Array | null>, [number]>();
 const mockWaitForAssistantText = jest.fn<Promise<string | null>, [number]>();
@@ -87,7 +88,7 @@ jest.mock('../providers', () => ({
       interrupt: mockInterrupt,
       disconnect: mockDisconnect,
       sendAudioFrame: mockSendAudioFrame,
-      sendTextQuery: jest.fn(),
+      sendTextQuery: mockSendTextQuery,
       waitForAssistantAudioChunk: mockWaitForAssistantAudioChunk,
       waitForAssistantText: mockWaitForAssistantText,
     },
@@ -163,6 +164,7 @@ describe('useTextChat realtime lifecycle lock', () => {
     mockFinishConnection.mockResolvedValue();
     mockInterrupt.mockResolvedValue();
     mockDisconnect.mockResolvedValue();
+    mockSendTextQuery.mockResolvedValue('S2S测试回复');
     mockSendAudioFrame.mockResolvedValue();
     mockWaitForAssistantAudioChunk.mockResolvedValue(null);
     mockWaitForAssistantText.mockResolvedValue(null);
@@ -209,6 +211,70 @@ describe('useTextChat realtime lifecycle lock', () => {
     });
 
     expect(result.current.conversations[0]?.systemPromptSnapshot).toBe('persisted persona prompt');
+  });
+
+  it('blocks text send when official_s2s config is incomplete and does not fallback to other chains', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('官方链路配置缺失');
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content === '当前 official_s2s 配置不完整，请补全 App ID / Access Token 后重试。',
+        ),
+      ).toBe(true);
+    });
+    expect(result.current.messages.some((message) => message.role === 'user' && message.content === '官方链路配置缺失')).toBe(false);
+    expect(mockGenerateReplyStream).not.toHaveBeenCalled();
+    expect(mockSendTextQuery).not.toHaveBeenCalled();
+  });
+
+  it('blocks text send when custom_llm config is incomplete and does not fallback to official/local reply', async () => {
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({
+      ...runtimeConfig,
+      replyChainMode: 'custom_llm',
+      llm: {
+        baseUrl: '',
+        apiKey: '',
+        model: '',
+        provider: 'openai-compatible',
+      },
+    });
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('custom链路配置缺失');
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) =>
+            message.role === 'assistant' &&
+            message.content === '当前 custom_llm 配置不完整，请补全 Base URL / API Key / Model 后重试。',
+        ),
+      ).toBe(true);
+    });
+    expect(result.current.messages.some((message) => message.role === 'user' && message.content === 'custom链路配置缺失')).toBe(false);
+    expect(mockGenerateReplyStream).not.toHaveBeenCalled();
+    expect(mockSendTextQuery).not.toHaveBeenCalled();
   });
 
   it('uses hydrated persona snapshot when creating conversation before bootstrap hydration', async () => {

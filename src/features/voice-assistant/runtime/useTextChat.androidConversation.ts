@@ -4,6 +4,28 @@ import type { AndroidDialogMode } from './useTextChat.shared';
 import { ensureAndroidClientTriggeredTts as ensureAndroidClientTriggeredTtsFlow } from './useTextChat.androidClientTts';
 
 export function createAndroidConversationHandlers(deps: any) {
+  const resolveDialogCharacterManifest = async (conversationId: string) => {
+    const conversation = deps.conversations?.find((item: { id: string }) => item.id === conversationId) ?? null;
+    const conversationSnapshot = conversation?.systemPromptSnapshot?.trim();
+    if (conversationSnapshot) {
+      return { characterManifest: conversationSnapshot, source: 'conversation_snapshot' as const };
+    }
+
+    const runtimePersonaPrompt = deps.runtimeConfig?.persona?.systemPrompt?.trim();
+    if (runtimePersonaPrompt) {
+      if (conversation) {
+        // Backfill legacy conversations that were created before snapshot persistence.
+        await deps.repo.updateConversationSystemPromptSnapshot(conversationId, runtimePersonaPrompt);
+        if (typeof deps.setConversations === 'function') {
+          deps.setConversations(await deps.repo.listConversations());
+        }
+      }
+      return { characterManifest: runtimePersonaPrompt, source: 'runtime_persona' as const };
+    }
+
+    return { characterManifest: deps.KONAN_CHARACTER_MANIFEST, source: 'konan_fallback' as const };
+  };
+
   const ensureAndroidDialogPrepared = async () => {
     if (!deps.useAndroidDialogRuntime) {
       return;
@@ -92,13 +114,24 @@ export function createAndroidConversationHandlers(deps: any) {
       workMode: deps.androidDialogWorkMode,
     });
     deps.dispatchDialogOrchestrator({ type: 'generation_bump_command' });
+    const { characterManifest, source: characterManifestSource } =
+      await resolveDialogCharacterManifest(nextConversationId);
     await deps.androidSessionController.startConversation({
       inputMode,
       model: deps.VOICE_ASSISTANT_DIALOG_MODEL,
       speaker: deps.runtimeConfig.voice.speakerId,
-      characterManifest: deps.KONAN_CHARACTER_MANIFEST,
+      characterManifest,
       botName: deps.VOICE_ASSISTANT_DIALOG_BOT_NAME,
     });
+    deps.providers.observability.log(
+      'info',
+      'dialog.session prompt resolved',
+      deps.buildDialogLogContext({
+        conversationId: nextConversationId,
+        characterManifestSource,
+        characterManifestLength: characterManifest.length,
+      }),
+    );
     if (!deps.isTestEnv) {
       const waitStartDeadline = Date.now() + deps.ANDROID_DIALOG_START_WAIT_MS;
       while (!deps.androidDialogSessionIdRef.current && Date.now() < waitStartDeadline) {

@@ -1,5 +1,4 @@
 import { Platform } from 'react-native';
-import { buildAssistantReply } from '../service/useCases';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
 import { maskSecret } from '../config/env';
 import { createVoiceAssistantProviders } from './providers';
@@ -74,6 +73,13 @@ export function createTextPipelineHandlers(deps: {
     const currentMessages = await deps.repo.listMessages(conversationId);
     const effectiveSystemPrompt = resolveConversationSystemPrompt(conversation);
     const trace = deps.ensureTurnTrace();
+
+    if (deps.runtimeConfig.replyChainMode === 'official_s2s' && !deps.useCustomReplyProvider) {
+      await deps.ensureS2SSession();
+      const serverReply = await deps.providers.s2s.sendTextQuery(userText);
+      return sanitizeAssistantText(serverReply?.trim() ?? '');
+    }
+
     let assistantText = '';
     let emittedChunk = false;
 
@@ -139,14 +145,15 @@ export function createTextPipelineHandlers(deps: {
     await deps.syncConversationState();
     deps.setPendingAssistantReply('...');
 
-    const assistantText = (
-      await generateAssistantReplyFromProvider({
-        userText: clean,
-        mode: userMessageType === 'audio' ? 'voice' : 'text',
-        conversationId: deps.activeConversationId,
-        fallbackToS2S: !deps.useCustomReplyProvider,
-      })
-    ) || sanitizeAssistantText(buildAssistantReply(clean));
+    const assistantText = await generateAssistantReplyFromProvider({
+      userText: clean,
+      mode: userMessageType === 'audio' ? 'voice' : 'text',
+      conversationId: deps.activeConversationId,
+      fallbackToS2S: !deps.useCustomReplyProvider,
+    });
+    if (!assistantText) {
+      throw new Error('empty assistant response for current reply chain');
+    }
 
     if (deps.useCustomReplyProvider) {
       deps.setConnectivityHint(
@@ -200,6 +207,32 @@ export function createTextPipelineHandlers(deps: {
   const sendText = async (text: string) => {
     const content = text.trim();
     if (!content || !deps.activeConversationId) {
+      return;
+    }
+    if (deps.runtimeConfig.replyChainMode === 'custom_llm' && !deps.useCustomReplyProvider) {
+      const message = 'custom_llm 配置不完整（Base URL / API Key / Model），已阻止发送且不做链路兜底。';
+      deps.setConnectivityHint(message);
+      await deps.updateConversationRuntimeStatus('error');
+      await deps.repo.appendMessage(deps.activeConversationId, {
+        conversationId: deps.activeConversationId,
+        role: 'assistant',
+        content: '当前 custom_llm 配置不完整，请补全 Base URL / API Key / Model 后重试。',
+        type: 'text',
+      });
+      await deps.syncConversationState();
+      return;
+    }
+    if (deps.runtimeConfig.replyChainMode === 'official_s2s' && !isCompleteS2SConfig(deps.runtimeConfig.s2s)) {
+      const message = 'official_s2s 配置不完整（缺少 App ID / Access Token），已阻止发送且不做链路兜底。';
+      deps.setConnectivityHint(message);
+      await deps.updateConversationRuntimeStatus('error');
+      await deps.repo.appendMessage(deps.activeConversationId, {
+        conversationId: deps.activeConversationId,
+        role: 'assistant',
+        content: '当前 official_s2s 配置不完整，请补全 App ID / Access Token 后重试。',
+        type: 'text',
+      });
+      await deps.syncConversationState();
       return;
     }
     let shouldFinalizeImmediately = true;

@@ -92,7 +92,7 @@ export function useCustomReplyConfigHintEffect(params: {
     if (params.replyChainMode !== 'custom_llm' || isCompleteLLMConfig(params.llmConfig)) {
       return;
     }
-    params.setConnectivityHint('当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置，已回退默认回复。');
+    params.setConnectivityHint('当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置；已禁用兜底发送。');
   }, [params.llmConfig, params.replyChainMode]);
 }
 

@@ -152,7 +152,9 @@ export function useTextChat(): UseTextChatResult {
     ? '官方 S2S / Dialog SDK'
     : useCustomReplyProvider
     ? `${llmConfig.provider || 'openai-compatible'} / ${llmConfig.model || 'unknown'}`
-    : '本地 Fallback';
+    : replyChainMode === 'custom_llm'
+    ? '自定义LLM未就绪（禁兜底）'
+    : '官方S2S未就绪（禁兜底）';
   const voiceLoopActiveRef = useRef(false);
   const voiceLoopRunningRef = useRef(false);
   const realtimeCallPhaseRef = useRef<RealtimeCallPhase>('idle');
@@ -185,6 +187,9 @@ export function useTextChat(): UseTextChatResult {
   const androidDialogClientTtsSelectionReadyRef = useRef(false);
   const androidCustomClientTtsStreamStartedRef = useRef(false);
   const androidObservedPlatformReplyInCustomRef = useRef(false);
+  const androidPlatformFinalTextByTurnKeyRef = useRef<Map<string, string>>(new Map());
+  const androidPlatformFinalInFlightTurnKeysRef = useRef<Set<string>>(new Set());
+  const androidPlatformFinalPendingTextByTurnKeyRef = useRef<Map<string, string>>(new Map());
   const androidRetiredSessionIdsRef = useRef<string[]>([]);
   const micIssueLastHintAtRef = useRef(0);
   const orchestratorStateRef = useRef(createInitialDialogOrchestratorState());
@@ -390,6 +395,7 @@ export function useTextChat(): UseTextChatResult {
       createAndroidConversationHandlers({
         useAndroidDialogRuntime,
         activeConversationId,
+        conversations,
         pendingAssistantReply,
         repo,
         providers,
@@ -402,6 +408,7 @@ export function useTextChat(): UseTextChatResult {
         dispatchDialogOrchestrator,
         rememberRetiredAndroidDialogSession,
         clearTurnTrace,
+        setConversations,
         setPendingAssistantReply,
         setLiveUserTranscript,
         androidSessionController,
@@ -435,6 +442,7 @@ export function useTextChat(): UseTextChatResult {
       androidDialogWorkMode,
       androidSessionController,
       buildDialogLogContext,
+      conversations,
       dispatchDialogOrchestrator,
       isTestEnv,
       pendingAssistantReply,
@@ -594,6 +602,9 @@ export function useTextChat(): UseTextChatResult {
         androidDialogClientTtsSelectionPromiseRef,
         androidDialogClientTtsSelectionReadyRef,
         androidCustomClientTtsStreamStartedRef,
+        androidPlatformFinalTextByTurnKeyRef,
+        androidPlatformFinalInFlightTurnKeysRef,
+        androidPlatformFinalPendingTextByTurnKeyRef,
         androidReplyGenerationRef,
         voiceLoopActiveRef,
         rememberRetiredAndroidDialogSession,

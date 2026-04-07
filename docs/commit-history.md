@@ -929,3 +929,42 @@
   - Android keyboard compensation combines system resize detection plus manual offset; OEM-specific keyboard behaviors may still require device-level verification.
 - Rollback:
   - Revert the scoped UI/dialog/runtime files above and restore `react-native-paper` in `package.json` + `pnpm-lock.yaml` to return to previous dialog behavior.
+
+## 2026-04-08 06:13 (Asia/Shanghai) - fix(voice-chat): coalesce platform finals and add copy action
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `package.json`
+  - `pnpm-lock.yaml`
+  - `src/features/voice-assistant/runtime/useTextChat.androidConversation.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.effects.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantMessageBubble.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantMessageBubble.test.tsx`
+- Summary:
+  - Added turn-key based platform final coalescing in Android Dialog runtime (`replyId/questionId` first) to prevent duplicate assistant落库 when one user turn emits repeated `chat_final`.
+  - Reworked in-flight `chat_final` handling from blind drop to candidate merge, so later fuller finals can supersede earlier truncated finals in the same turn.
+  - Added Android runtime regression test for repeated `chat_final` in one turn and kept existing session/interrupt regressions green.
+  - Updated Android dialog conversation startup to resolve `characterManifest` from conversation snapshot/runtime persona and backfill legacy conversations when snapshot missing.
+  - Removed text-reply fallback behavior for incomplete `custom_llm` / `official_s2s` configs: sending now fail-closed with explicit assistant guidance and hint copy.
+  - Unified assistant message presentation to one card style and implemented bottom copy action via `expo-clipboard` with success/error toast feedback.
+  - Added UI unit test for copy action and wired `expo-clipboard` dependency.
+- Tests:
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings in final run)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantMessageBubble.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (pass)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `pnpm run android:run` (pass, APK installed to connected device)
+- Risk:
+  - Platform final coalescing relies on trace key quality (`replyId/questionId/session+turn`); if upstream omits these fields, dedupe fidelity may degrade.
+  - Clipboard write depends on platform clipboard availability; failures are handled with toast but still require user retry.
+  - Fail-closed reply-chain behavior is stricter than fallback behavior and will surface more user-facing config errors by design.
+- Rollback:
+  - Revert the scoped runtime/UI files and dependency changes above to restore previous `chat_final` persistence logic, fallback reply behavior, and non-interactive copy button.
