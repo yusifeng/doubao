@@ -82,8 +82,8 @@ function RootDrawerNavigator() {
       )}
       screenOptions={{
         headerShown: false,
-        overlayColor: 'rgba(15, 23, 42, 0.18)',
-        drawerType: 'slide',
+        overlayColor: 'rgba(0, 0, 0, 0.2)',
+        drawerType: 'front',
         swipeEdgeWidth: 36,
         drawerStyle: {
           width: drawerWidth,

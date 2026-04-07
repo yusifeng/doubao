@@ -92,7 +92,7 @@ describe('VoiceAssistantSessionDrawerContent', () => {
       />,
     );
 
-    expect(screen.getByText('会话')).toBeTruthy();
+
     expect(screen.getByText('默认会话')).toBeTruthy();
     expect(screen.getByText('案件讨论')).toBeTruthy();
 

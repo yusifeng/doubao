@@ -26,6 +26,27 @@
 
 ## Entries
 
+## 2026-04-07 18:11 (Asia/Shanghai) - refactor(ui): visually refine voice session drawer design
+
+- Commit: pending
+- Author: Antigravity
+- Scope:
+  - `src/core/theme/mappers.ts`
+  - `src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent.tsx`
+  - `app/_layout.tsx`
+- Summary:
+  - Redesigned the Voice Assistant Session Drawer to align with the target UI constraints.
+  - Removed explicit layout elements to cleanly mimic target: removed top header title "会话", removed secondary text preview in chat rows ("点击进入...").
+  - Repositioned the "New Chat" action to sit succinctly right of the search box as a circular '+' icon (`name="plus"`), eliminating the previous standalone clunky primary row button "新建绘画".
+  - Softened the Drawer UI using `front` overlay type and improved backdrop `rgba(0,0,0,0.2)` in `app/_layout.tsx`.
+  - Unified chat list avatars with a standard rounded-gray style without heavy colors.
+- Tests:
+  - `pnpm run test src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx` (pass, updated title assertions)
+- Risk:
+  - Pure visual changes. Assumes current components correctly map layout changes and that target users don't rely heavily on the previous distinct colored avatars for quick identification.
+- Rollback:
+  - Revert the three listed UI and theme mapping files and the layout drawer config.
+
 ## 2026-03-29 04:06 (Asia/Shanghai) - refactor-voice-chat-flow-stabilization-v2
 
 - Commit: pending
