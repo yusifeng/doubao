@@ -58,13 +58,15 @@ UI(Screen/Component)
 
 ## 4.1 StorageProvider（本地存储）
 
-V1 决策：会话与消息持久化优先采用 **SQLite**。
+当前落地：会话与消息已使用 `ConversationRepo` + AsyncStorage 持久化（`voice_assistant.conversation_repo.v1`）。
+
+演进规划：当会话规模、检索和多维筛选需求提升后，迁移到 **SQLite**。
 
 原因：
 
-- 会话与消息天然是结构化数据，适合关系存储；
-- 便于分页、检索、按时间排序、历史归档；
-- 便于后续扩展（多会话状态、草稿、失败重试记录）。
+- AsyncStorage 与当前 RN/Expo 链路集成成本低，能快速覆盖“重启后恢复会话”的基础诉求；
+- `ConversationRepo` 已完成接口抽象，后续可无侵入替换底层存储实现；
+- SQLite 仍是中长期目标，用于分页、检索、归档与复杂查询。
 
 契约建议：
 
@@ -315,6 +317,8 @@ tap stop
 2. 先打通文本链路（最小可用）；
 3. 再接入语音识别（ASR）与 TTS 播放；
 4. 最后补齐会话持久化与错误恢复。
+   - 当前已补齐 AsyncStorage 持久化；
+   - 后续在需要复杂查询时迁移 SQLite。
 5. 在 UI 收敛阶段完成 token 化替换与一致性检查。
 
 ## 11. UI 同款对齐补充

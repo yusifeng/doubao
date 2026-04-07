@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import type { Conversation, Message } from '../types/model';
 import { InMemoryConversationRepo } from '../repo/conversationRepo';
+import { PersistentConversationRepo } from '../repo/persistentConversationRepo';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
 import { readVoicePipelineMode } from '../config/env';
 import { getEffectiveRuntimeConfig } from '../config/runtimeConfigRepo';
@@ -83,6 +84,8 @@ export type UseTextChatResult = {
   pendingAssistantReply: string;
   createConversation: (title?: string) => Promise<string>;
   selectConversation: (conversationId: string) => Promise<boolean>;
+  renameConversationTitle?: (conversationId: string, title: string) => Promise<boolean>;
+  deleteConversation?: (conversationId: string) => Promise<{ ok: boolean; nextConversationId: string | null }>;
   sendText: (text: string) => Promise<void>;
   isVoiceActive: boolean;
   supportsVoiceInputMute: boolean;
@@ -109,7 +112,10 @@ function mergeAssistantDraft(currentDraft: string, incomingText: string): string
 
 export function useTextChat(): UseTextChatResult {
   const isTestEnv = process.env.NODE_ENV === 'test';
-  const repo = useMemo(() => new InMemoryConversationRepo(), []);
+  const repo = useMemo(
+    () => (isTestEnv ? new InMemoryConversationRepo() : new PersistentConversationRepo()),
+    [isTestEnv],
+  );
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(() => readRuntimeConfigFromEnv());
   const [runtimeConfigHydrated, setRuntimeConfigHydrated] = useState(false);
   const runtimeConfigRef = useRef(runtimeConfig);
@@ -299,6 +305,14 @@ export function useTextChat(): UseTextChatResult {
   const syncConversationState = useCallback(() => runtimeStateHandlers.syncConversationState(), [runtimeStateHandlers]);
   const selectConversation = useCallback((conversationId: string) => runtimeStateHandlers.selectConversation(conversationId), [runtimeStateHandlers]);
   const createConversation = useCallback((title = '新会话') => runtimeStateHandlers.createConversation(title), [runtimeStateHandlers]);
+  const renameConversationTitle = useCallback(
+    (conversationId: string, title: string) => runtimeStateHandlers.renameConversationTitle(conversationId, title),
+    [runtimeStateHandlers],
+  );
+  const deleteConversation = useCallback(
+    (conversationId: string) => runtimeStateHandlers.deleteConversation(conversationId),
+    [runtimeStateHandlers],
+  );
   const appendAssistantAudioMessage = useCallback(
     (content: string, options?: { dedupeWindowMs?: number }) => runtimeStateHandlers.appendAssistantAudioMessage(content, options),
     [runtimeStateHandlers],
@@ -939,6 +953,8 @@ export function useTextChat(): UseTextChatResult {
     pendingAssistantReply,
     createConversation,
     selectConversation,
+    renameConversationTitle,
+    deleteConversation,
     sendText,
     isVoiceActive,
     supportsVoiceInputMute,

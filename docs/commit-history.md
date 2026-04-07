@@ -26,6 +26,46 @@
 
 ## Entries
 
+## 2026-04-07 22:49 (Asia/Shanghai) - feat(voice-session): persist conversations and add drawer long-press actions
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/repo/conversationRepo.ts`
+  - `src/features/voice-assistant/repo/persistentConversationRepo.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx`
+  - `app/_layout.tsx`
+  - `app/(chat)/voice/[conversationId].tsx`
+  - `src/core/providers/audio/expoRealtime.constants.ts`
+  - `package.json`
+  - `pnpm-lock.yaml`
+  - `docs/exec-plans/active/plan-conversation-single-surface.md`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+  - `docs/design-docs/voice-assistant-ui-parity.md`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+- Summary:
+  - Added session management actions in drawer long-press menu: `编辑对话名称` and `从对话列表删除`.
+  - Extended runtime/repo contracts with conversation rename and delete APIs; deleting active conversation now auto-selects next conversation or recreates a default one when list becomes empty.
+  - Introduced `PersistentConversationRepo` backed by AsyncStorage (with safe no-native fallback in test environments) and switched runtime to persistent repo outside test mode.
+  - Enabled keep-awake in voice route and added background-active audio mode flag to reduce auto-sleep interruption during voice sessions.
+  - Fixed navigation edge cases from review findings: deleting non-active sessions no longer forces route change, and long-press no longer accidentally triggers session selection.
+  - Synced active plan/product/design docs to reflect drawer long-press actions, current persistence baseline (AsyncStorage -> SQLite evolution), and voice-mode anti-sleep requirement.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx app/__tests__/routing.test.tsx` (pass; includes known React act warnings)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx app/__tests__/routing.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx app/__tests__/routing.test.tsx` (pass; includes known React act warnings)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass; no actionable findings)
+- Risk:
+  - AsyncStorage persistence currently stores the entire conversation state blob; large history volume may need SQLite migration for performance and query flexibility.
+  - Keep-awake covers auto-sleep prevention while app is foregrounded, but does not replace full background-call capabilities on lock-screen policies.
+- Rollback:
+  - Revert the scoped repo/runtime/ui/layout files to return to in-memory session behavior and pre-long-press drawer interactions; revert doc files to prior spec/design text.
+
 ## 2026-04-07 21:26 (Asia/Shanghai) - feat(voice-route): split immersive voice page and full-bleed safe area
 
 - Commit: pending

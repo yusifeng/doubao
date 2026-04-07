@@ -1,4 +1,5 @@
 import { DrawerActions } from '@react-navigation/native';
+import { useKeepAwake } from 'expo-keep-awake';
 import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useMemo, useRef } from 'react';
@@ -7,6 +8,7 @@ import { useVoiceAssistantRuntime } from '../../../src/features/voice-assistant/
 import { VoiceAssistantScreen } from '../../../src/features/voice-assistant/ui/VoiceAssistantScreen';
 
 export default function VoiceRoute() {
+  useKeepAwake('voice-route');
   const params = useLocalSearchParams<{ conversationId?: string }>();
   const session = useVoiceAssistantRuntime();
   const navigation = useNavigation();

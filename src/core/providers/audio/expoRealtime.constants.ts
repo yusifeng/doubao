@@ -18,6 +18,7 @@ export const CAPTURE_AUDIO_MODE = {
   allowsRecordingIOS: true,
   playsInSilentModeIOS: true,
   shouldDuckAndroid: true,
+  staysActiveInBackground: true,
   // Keep assistant audio on media route; earpiece/voice-call route is prone to artifacts on emulator.
   playThroughEarpieceAndroid: false,
 } as const;

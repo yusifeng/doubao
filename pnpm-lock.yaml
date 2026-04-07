@@ -44,6 +44,9 @@ importers:
       expo-font:
         specifier: ~55.0.4
         version: 55.0.4(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
+      expo-keep-awake:
+        specifier: ^55.0.6
+        version: 55.0.6(expo@55.0.8)(react@19.2.0)
       expo-linking:
         specifier: ~55.0.8
         version: 55.0.8(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
@@ -2242,8 +2245,8 @@ packages:
   expo-json-utils@55.0.0:
     resolution: {integrity: sha512-aupt/o5PDAb8dXDCb0JcRdkqnTLxe/F+La7jrnyd/sXlYFfRgBJLFOa1SqVFXm1E/Xam1SE/yw6eAb+DGY7Arg==}
 
-  expo-keep-awake@55.0.4:
-    resolution: {integrity: sha512-vwfdMtMS5Fxaon8gC0AiE70SpxTsHJ+rjeoVJl8kdfdbxczF7OIaVmfjFJ5Gfigd/WZiLqxhfZk34VAkXF4PNg==}
+  expo-keep-awake@55.0.6:
+    resolution: {integrity: sha512-acJjeHqkNxMVckEcJhGQeIksqqsarscSHJtT559bNgyiM4r14dViQ66su7bb6qDVeBt0K7z3glXI1dHVck1Zgg==}
     peerDependencies:
       expo: '*'
       react: '*'
@@ -6984,7 +6987,7 @@ snapshots:
 
   expo-json-utils@55.0.0: {}
 
-  expo-keep-awake@55.0.4(expo@55.0.8)(react@19.2.0):
+  expo-keep-awake@55.0.6(expo@55.0.8)(react@19.2.0):
     dependencies:
       expo: 55.0.8(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(@expo/metro-runtime@55.0.6)(expo-router@55.0.7)(react-dom@19.2.0(react@19.2.0))(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)(typescript@5.9.3)
       react: 19.2.0
@@ -7153,7 +7156,7 @@ snapshots:
       expo-constants: 55.0.9(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(typescript@5.9.3)
       expo-file-system: 55.0.11(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))
       expo-font: 55.0.4(expo@55.0.8)(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
-      expo-keep-awake: 55.0.4(expo@55.0.8)(react@19.2.0)
+      expo-keep-awake: 55.0.6(expo@55.0.8)(react@19.2.0)
       expo-modules-autolinking: 55.0.11(typescript@5.9.3)
       expo-modules-core: 55.0.17(react-native@0.83.2(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
       pretty-format: 29.7.0

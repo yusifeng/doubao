@@ -5,6 +5,8 @@ export interface ConversationRepo {
   listConversations(): Promise<Conversation[]>;
   appendMessage(conversationId: string, message: Omit<Message, 'id' | 'createdAt'>): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
+  renameConversationTitle(conversationId: string, title: string): Promise<boolean>;
+  deleteConversation(conversationId: string): Promise<boolean>;
   updateConversationStatus(conversationId: string, status: Conversation['status']): Promise<void>;
   updateConversationSystemPromptSnapshot(conversationId: string, snapshot: string): Promise<void>;
 }
@@ -33,7 +35,7 @@ export class InMemoryConversationRepo implements ConversationRepo {
   }
 
   async listConversations(): Promise<Conversation[]> {
-    return this.conversations;
+    return this.sortConversations(this.conversations);
   }
 
   async appendMessage(
@@ -65,6 +67,35 @@ export class InMemoryConversationRepo implements ConversationRepo {
     return this.messagesByConversation[conversationId] ?? [];
   }
 
+  async renameConversationTitle(conversationId: string, title: string): Promise<boolean> {
+    const normalized = title.trim();
+    if (!normalized) {
+      return false;
+    }
+    const now = Date.now();
+    let updated = false;
+    this.conversations = this.conversations.map((conversation) => {
+      if (conversation.id !== conversationId) {
+        return conversation;
+      }
+      updated = true;
+      return {
+        ...conversation,
+        title: normalized,
+        updatedAt: now,
+      };
+    });
+    this.conversations = this.sortConversations(this.conversations);
+    return updated;
+  }
+
+  async deleteConversation(conversationId: string): Promise<boolean> {
+    const existingCount = this.conversations.length;
+    this.conversations = this.conversations.filter((conversation) => conversation.id !== conversationId);
+    delete this.messagesByConversation[conversationId];
+    return this.conversations.length < existingCount;
+  }
+
   async updateConversationStatus(conversationId: string, status: Conversation['status']): Promise<void> {
     this.conversations = this.conversations.map((conversation) =>
       conversation.id === conversationId ? { ...conversation, status } : conversation,
@@ -85,5 +116,9 @@ export class InMemoryConversationRepo implements ConversationRepo {
   private nextId(prefix: string): string {
     this.idSeed += 1;
     return `${prefix}-${this.idSeed}`;
+  }
+
+  private sortConversations(conversations: Conversation[]): Conversation[] {
+    return [...conversations].sort((left, right) => right.updatedAt - left.updatedAt);
   }
 }

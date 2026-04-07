@@ -88,6 +88,8 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onClose={jest.fn()}
         onSelectConversation={jest.fn()}
         onCreateConversation={jest.fn()}
+        onRenameConversation={jest.fn()}
+        onDeleteConversation={jest.fn()}
         onOpenSettings={jest.fn()}
       />,
     );
@@ -115,6 +117,8 @@ describe('VoiceAssistantSessionDrawerContent', () => {
         onClose={onClose}
         onSelectConversation={onSelectConversation}
         onCreateConversation={onCreateConversation}
+        onRenameConversation={jest.fn()}
+        onDeleteConversation={jest.fn()}
         onOpenSettings={onOpenSettings}
       />,
     );
@@ -130,5 +134,40 @@ describe('VoiceAssistantSessionDrawerContent', () => {
       expect(onOpenSettings).toHaveBeenCalledTimes(1);
       expect(onSelectConversation).toHaveBeenCalledWith('conv-2');
     });
+  });
+
+  it('supports long-press rename and delete actions', async () => {
+    const onRenameConversation = jest.fn().mockResolvedValue(undefined);
+    const onDeleteConversation = jest.fn().mockResolvedValue(undefined);
+    const onSelectConversation = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <VoiceAssistantSessionDrawerContent
+        session={createSession()}
+        onClose={jest.fn()}
+        onSelectConversation={onSelectConversation}
+        onCreateConversation={jest.fn()}
+        onRenameConversation={onRenameConversation}
+        onDeleteConversation={onDeleteConversation}
+        onOpenSettings={jest.fn()}
+      />,
+    );
+
+    fireEvent(screen.getByTestId('conversation-row-conv-2'), 'onLongPress');
+    fireEvent.press(screen.getByTestId('conversation-action-rename-button'));
+    fireEvent.changeText(screen.getByTestId('conversation-rename-input'), '重命名会话');
+    fireEvent.press(screen.getByTestId('conversation-rename-confirm-button'));
+
+    await waitFor(() => {
+      expect(onRenameConversation).toHaveBeenCalledWith('conv-2', '重命名会话');
+    });
+
+    fireEvent(screen.getByTestId('conversation-row-conv-2'), 'onLongPress');
+    fireEvent.press(screen.getByTestId('conversation-action-delete-button'));
+
+    await waitFor(() => {
+      expect(onDeleteConversation).toHaveBeenCalledWith('conv-2');
+    });
+    expect(onSelectConversation).not.toHaveBeenCalled();
   });
 });

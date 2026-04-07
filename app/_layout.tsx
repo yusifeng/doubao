@@ -60,6 +60,38 @@ function RootDrawerNavigator() {
     router.push('/settings');
   }
 
+  async function handleRenameConversation(conversationId: string, title: string) {
+    if (!session.renameConversationTitle) {
+      return;
+    }
+    await session.renameConversationTitle(conversationId, title);
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    if (!session.deleteConversation) {
+      return;
+    }
+
+    const deletingActiveConversation = session.activeConversationId === conversationId;
+    if (deletingActiveConversation && session.isVoiceActive) {
+      if (session.ensureVoiceStopped) {
+        await session.ensureVoiceStopped();
+      } else {
+        await session.toggleVoice();
+      }
+    }
+
+    const result = await session.deleteConversation(conversationId);
+    if (!result.ok || !result.nextConversationId || !deletingActiveConversation) {
+      return;
+    }
+
+    router.replace({
+      pathname: '/conversation/[conversationId]',
+      params: { conversationId: result.nextConversationId, mode: 'text' },
+    });
+  }
+
   return (
     <Drawer
       drawerContent={(props) => (
@@ -73,6 +105,12 @@ function RootDrawerNavigator() {
           onCreateConversation={async () => {
             await handleCreateConversation();
             props.navigation.closeDrawer();
+          }}
+          onRenameConversation={async (conversationId, title) => {
+            await handleRenameConversation(conversationId, title);
+          }}
+          onDeleteConversation={async (conversationId) => {
+            await handleDeleteConversation(conversationId);
           }}
           onOpenSettings={async () => {
             await handleOpenSettings();

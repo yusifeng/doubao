@@ -55,6 +55,55 @@ export function createRuntimeStateHandlers(deps: any) {
     return conversation.id;
   };
 
+  const renameConversationTitle = async (conversationId: string, title: string) => {
+    const normalized = title.trim();
+    if (!normalized) {
+      return false;
+    }
+    const renamed = await deps.repo.renameConversationTitle(conversationId, normalized);
+    if (!renamed) {
+      return false;
+    }
+    deps.setConversations(await deps.repo.listConversations());
+    return true;
+  };
+
+  const deleteConversation = async (conversationId: string) => {
+    const deleted = await deps.repo.deleteConversation(conversationId);
+    if (!deleted) {
+      return { ok: false, nextConversationId: deps.activeConversationId ?? null };
+    }
+
+    let refreshedConversations = await deps.repo.listConversations();
+    let nextConversationId = deps.activeConversationId ?? null;
+
+    if (deps.activeConversationId === conversationId) {
+      const fallbackConversation = refreshedConversations[0] ?? null;
+      if (fallbackConversation) {
+        nextConversationId = fallbackConversation.id;
+        deps.setActiveConversationId(fallbackConversation.id);
+        deps.setMessages(await deps.repo.listMessages(fallbackConversation.id));
+      } else {
+        const created = await deps.repo.createConversation('默认会话', {
+          systemPromptSnapshot: deps.runtimeConfigRef.current.persona.systemPrompt,
+        });
+        refreshedConversations = await deps.repo.listConversations();
+        nextConversationId = created.id;
+        deps.setActiveConversationId(created.id);
+        deps.setMessages(await deps.repo.listMessages(created.id));
+      }
+      deps.setLiveUserTranscript('');
+      deps.setPendingAssistantReply('');
+      deps.machine.toIdle();
+      if (nextConversationId) {
+        await deps.repo.updateConversationStatus(nextConversationId, 'idle');
+      }
+    }
+
+    deps.setConversations(refreshedConversations);
+    return { ok: true, nextConversationId };
+  };
+
   const appendAssistantAudioMessage = async (
     text: string,
     options?: { dedupeWindowMs?: number; conversationId?: string | null },
@@ -296,6 +345,8 @@ export function createRuntimeStateHandlers(deps: any) {
     syncConversationState,
     selectConversation,
     createConversation,
+    renameConversationTitle,
+    deleteConversation,
     appendAssistantAudioMessage,
     resetRealtimeCallState,
     setVoiceInputMutedRuntime,
