@@ -1,7 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  Modal,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -13,6 +11,7 @@ import { voiceAssistantConversationThemeClass } from '../../../core/theme/mapper
 import type { Conversation } from '../types/model';
 import type { UseTextChatResult } from '../runtime/useTextChat';
 import { VoiceAssistantIcon } from './VoiceAssistantIcon';
+import { AppDialog } from '../../../shared/ui/AppDialog';
 
 type VoiceAssistantSessionDrawerContentProps = {
   session: UseTextChatResult;
@@ -64,7 +63,10 @@ export function VoiceAssistantSessionDrawerContent({
 }: VoiceAssistantSessionDrawerContentProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionConversation, setActionConversation] = useState<Conversation | null>(null);
+  const [actionDialogVisible, setActionDialogVisible] = useState(false);
+  const [pendingRenameConversation, setPendingRenameConversation] = useState<Conversation | null>(null);
   const [renameConversation, setRenameConversation] = useState<Conversation | null>(null);
+  const [renameDialogVisible, setRenameDialogVisible] = useState(false);
   const [renameDraft, setRenameDraft] = useState('');
   const longPressedConversationIdRef = useRef<string | null>(null);
 
@@ -82,14 +84,13 @@ export function VoiceAssistantSessionDrawerContent({
   }, [searchQuery, session.conversations]);
 
   const openRenameDialog = (conversation: Conversation) => {
-    setActionConversation(null);
-    setRenameConversation(conversation);
-    setRenameDraft(conversation.title);
+    setPendingRenameConversation(conversation);
+    setActionDialogVisible(false);
   };
 
   const handleRenameConfirm = async () => {
     if (!renameConversation || !onRenameConversation) {
-      setRenameConversation(null);
+      setRenameDialogVisible(false);
       setRenameDraft('');
       return;
     }
@@ -98,17 +99,17 @@ export function VoiceAssistantSessionDrawerContent({
       return;
     }
     await onRenameConversation(renameConversation.id, nextTitle);
-    setRenameConversation(null);
+    setRenameDialogVisible(false);
     setRenameDraft('');
   };
 
   const handleDeleteConversation = async () => {
     if (!actionConversation || !onDeleteConversation) {
-      setActionConversation(null);
+      setActionDialogVisible(false);
       return;
     }
     await onDeleteConversation(actionConversation.id);
-    setActionConversation(null);
+    setActionDialogVisible(false);
   };
 
   return (
@@ -180,6 +181,7 @@ export function VoiceAssistantSessionDrawerContent({
                   onLongPress={() => {
                     longPressedConversationIdRef.current = conversation.id;
                     setActionConversation(conversation);
+                    setActionDialogVisible(true);
                   }}
                   delayLongPress={220}
                   testID={
@@ -230,115 +232,95 @@ export function VoiceAssistantSessionDrawerContent({
         </View>
       </View>
 
-      <Modal
-        transparent
-        visible={actionConversation !== null}
-        animationType="fade"
-        onRequestClose={() => setActionConversation(null)}
+      <AppDialog
+        visible={actionDialogVisible}
+        title={actionConversation?.title}
+        onBackdropPress={() => setActionDialogVisible(false)}
+        onModalHide={() => {
+          if (!actionDialogVisible) {
+            setActionConversation(null);
+            if (pendingRenameConversation) {
+              setRenameConversation(pendingRenameConversation);
+              setRenameDraft(pendingRenameConversation.title);
+              setRenameDialogVisible(true);
+              setPendingRenameConversation(null);
+            }
+          }
+        }}
+        testID="conversation-action-menu-backdrop"
       >
-        <Pressable
-          className="flex-1 items-center justify-center bg-black/30 px-8"
-          onPress={() => setActionConversation(null)}
-          testID="conversation-action-menu-backdrop"
-        >
-          <Pressable
-            className="w-full max-w-[320px] overflow-hidden rounded-2xl bg-white"
-            onPress={() => {}}
-            testID="conversation-action-menu"
+        <View testID="conversation-action-menu">
+          <TouchableOpacity
+            className="flex-row items-center justify-between px-1 py-3"
+            onPress={() => {
+              if (!actionConversation) {
+                return;
+              }
+              openRenameDialog(actionConversation);
+            }}
+            testID="conversation-action-rename-button"
           >
-            <View className="border-b border-black/5 px-4 py-3">
-              <Text className="text-[16px] font-medium text-[#111827]" numberOfLines={1}>
-                {actionConversation?.title ?? '会话'}
-              </Text>
-            </View>
-            <TouchableOpacity
-              className="flex-row items-center justify-between px-4 py-3"
-              onPress={() => {
-                if (!actionConversation) {
-                  return;
-                }
-                openRenameDialog(actionConversation);
-              }}
-              testID="conversation-action-rename-button"
-            >
-              <Text className="text-[15px] text-[#111827]">编辑对话名称</Text>
-              <VoiceAssistantIcon name="edit" size={16} color="#6B7280" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="border-t border-black/5 px-4 py-3"
-              onPress={() => {
-                void handleDeleteConversation();
-              }}
-              testID="conversation-action-delete-button"
-            >
-              <Text className="text-[15px] text-[#DC2626]">从对话列表删除</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+            <Text className="text-[15px] text-[#111827]">编辑对话名称</Text>
+            <VoiceAssistantIcon name="edit" size={16} color="#6B7280" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="border-t border-black/5 px-1 py-3"
+            onPress={() => {
+              void handleDeleteConversation();
+            }}
+            testID="conversation-action-delete-button"
+          >
+            <Text className="text-[15px] text-[#DC2626]">从对话列表删除</Text>
+          </TouchableOpacity>
+        </View>
+      </AppDialog>
 
-      <Modal
-        transparent
-        visible={renameConversation !== null}
-        animationType="fade"
-        onRequestClose={() => {
-          setRenameConversation(null);
+      <AppDialog
+        visible={renameDialogVisible}
+        title="对话名称"
+        onBackdropPress={() => {
+          setRenameDialogVisible(false);
           setRenameDraft('');
         }}
-      >
-        <Pressable
-          className="flex-1 items-center justify-center bg-black/35 px-8"
-          onPress={() => {
+        onModalHide={() => {
+          if (!renameDialogVisible) {
             setRenameConversation(null);
-            setRenameDraft('');
-          }}
-          testID="conversation-rename-modal-backdrop"
-        >
-          <Pressable
-            className="w-full max-w-[340px] rounded-2xl bg-white px-4 pb-3 pt-4"
-            onPress={() => {}}
-            testID="conversation-rename-modal"
-          >
-            <Text className="text-center text-[19px] font-semibold text-[#111827]">对话名称</Text>
-            <TextInput
-              className="mt-4 rounded-xl border border-[#D1D5DB] px-3 py-2 text-[16px] text-[#111827]"
-              onChangeText={setRenameDraft}
-              value={renameDraft}
-              placeholder="请输入对话名称"
-              placeholderTextColor="#9CA3AF"
-              maxLength={40}
-              autoFocus
-              testID="conversation-rename-input"
-            />
-            <View className="mt-4 flex-row items-center justify-end gap-5 pr-1">
-              <TouchableOpacity
-                onPress={() => {
-                  setRenameConversation(null);
-                  setRenameDraft('');
-                }}
-                testID="conversation-rename-cancel-button"
-              >
-                <Text className="text-[16px] text-[#6B7280]">取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  void handleRenameConfirm();
-                }}
-                disabled={renameDraft.trim().length === 0}
-                testID="conversation-rename-confirm-button"
-              >
-                <Text
-                  className={`text-[16px] font-semibold ${
-                    renameDraft.trim().length === 0 ? 'text-[#93C5FD]' : 'text-[#2563EB]'
-                  }`}
-                >
-                  确定
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          }
+        }}
+        testID="conversation-rename-modal-backdrop"
+        actions={[
+          {
+            label: '取消',
+            onPress: () => {
+              setRenameDialogVisible(false);
+              setRenameDraft('');
+            },
+            testID: 'conversation-rename-cancel-button',
+          },
+          {
+            label: '确定',
+            onPress: () => {
+              void handleRenameConfirm();
+            },
+            testID: 'conversation-rename-confirm-button',
+            variant: 'primary',
+            disabled: renameDraft.trim().length === 0,
+          },
+        ]}
+      >
+        <View testID="conversation-rename-modal">
+          <TextInput
+            className="rounded-xl border border-[#D1D5DB] px-3 py-2 text-[16px] text-[#111827]"
+            onChangeText={setRenameDraft}
+            value={renameDraft}
+            placeholder="请输入对话名称"
+            placeholderTextColor="#9CA3AF"
+            maxLength={40}
+            autoFocus
+            testID="conversation-rename-input"
+          />
+        </View>
+      </AppDialog>
     </SafeAreaView>
   );
 }

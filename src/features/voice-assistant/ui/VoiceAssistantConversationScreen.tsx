@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   voiceAssistantConversationThemeClass,
   voiceAssistantThemeStyle,
@@ -32,7 +36,11 @@ export function VoiceAssistantConversationScreen({
   onChangeMode,
   onOpenDrawer,
 }: VoiceAssistantConversationScreenProps) {
+  const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState("");
+  const initialWindowHeightRef = useRef(Dimensions.get("window").height);
+  const keyboardVisibleRef = useRef(false);
+  const [androidKeyboardOffset, setAndroidKeyboardOffset] = useState(0);
   const voiceToggleInFlightRef = useRef(false);
   const previousModeRef = useRef<ConversationScreenMode | null>(null);
   const shouldRecoverVoiceAfterStopRef = useRef(false);
@@ -71,6 +79,48 @@ export function VoiceAssistantConversationScreen({
   ]);
 
   const canSend = draft.trim().length > 0;
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const dimensionsSubscription = Dimensions.addEventListener("change", ({ window }) => {
+      if (keyboardVisibleRef.current) {
+        return;
+      }
+      const baselineHeight = initialWindowHeightRef.current;
+      const heightDrop = baselineHeight - window.height;
+      // Ignore large drops before keyboardDidShow; those are usually adjustResize in-flight.
+      if (window.height >= baselineHeight || heightDrop < 80) {
+        initialWindowHeightRef.current = window.height;
+      }
+    });
+
+    const keyboardShowSubscription = Keyboard.addListener("keyboardDidShow", (event) => {
+      keyboardVisibleRef.current = true;
+      const currentWindowHeight = Dimensions.get("window").height;
+      const isSystemResizeActive = initialWindowHeightRef.current - currentWindowHeight > 80;
+      if (isSystemResizeActive) {
+        setAndroidKeyboardOffset(0);
+        return;
+      }
+      const keyboardHeight = event.endCoordinates?.height ?? 0;
+      setAndroidKeyboardOffset(Math.max(0, keyboardHeight - insets.bottom));
+    });
+
+    const keyboardHideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      keyboardVisibleRef.current = false;
+      setAndroidKeyboardOffset(0);
+      initialWindowHeightRef.current = Dimensions.get("window").height;
+    });
+
+    return () => {
+      dimensionsSubscription.remove();
+      keyboardShowSubscription.remove();
+      keyboardHideSubscription.remove();
+    };
+  }, [insets.bottom]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -249,122 +299,129 @@ export function VoiceAssistantConversationScreen({
   }
 
   return (
-    <SafeAreaView
-      edges={["top", "bottom"]}
-      className={voiceAssistantConversationThemeClass.safeArea}
-    >
-      <View className={voiceAssistantConversationThemeClass.screen}>
-        <View className={voiceAssistantConversationThemeClass.header}>
-          <View className={voiceAssistantConversationThemeClass.headerRow}>
-            <TouchableOpacity
-              className={voiceAssistantConversationThemeClass.headerButton}
-              onPress={onOpenDrawer}
-              testID="conversation-open-drawer-button"
-            >
-              <VoiceAssistantIcon name="menu" size={24} color="#111827" />
-            </TouchableOpacity>
-            <View className={voiceAssistantConversationThemeClass.headerCenter}>
-              <View
-                className={voiceAssistantConversationThemeClass.headerTitleRow}
-              >
-                <Text
-                  className={voiceAssistantConversationThemeClass.headerTitle}
-                >
-                  {activeConversation?.title ?? "默认会话"}
-                </Text>
-              </View>
-              <Text
-                className={voiceAssistantConversationThemeClass.headerSubtext}
-              >
-                {session.textReplySourceLabel}
-              </Text>
-            </View>
-            <View
-              className={
-                voiceAssistantConversationThemeClass.headerRightActions
-              }
-            >
+    <SafeAreaView edges={["top"]} className={voiceAssistantConversationThemeClass.safeArea}>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <View className={voiceAssistantConversationThemeClass.screen}>
+          <View className={voiceAssistantConversationThemeClass.header}>
+            <View className={voiceAssistantConversationThemeClass.headerRow}>
               <TouchableOpacity
                 className={voiceAssistantConversationThemeClass.headerButton}
-                onPress={() =>
-                  onChangeMode(mode === "voice" ? "text" : "voice")
-                }
-                testID={
-                  mode === "voice"
-                    ? "conversation-close-voice-button"
-                    : "conversation-open-voice-button"
+                onPress={onOpenDrawer}
+                testID="conversation-open-drawer-button"
+              >
+                <VoiceAssistantIcon name="menu" size={24} color="#111827" />
+              </TouchableOpacity>
+              <View className={voiceAssistantConversationThemeClass.headerCenter}>
+                <View
+                  className={voiceAssistantConversationThemeClass.headerTitleRow}
+                >
+                  <Text
+                    className={voiceAssistantConversationThemeClass.headerTitle}
+                  >
+                    {activeConversation?.title ?? "默认会话"}
+                  </Text>
+                </View>
+                <Text
+                  className={voiceAssistantConversationThemeClass.headerSubtext}
+                >
+                  {session.textReplySourceLabel}
+                </Text>
+              </View>
+              <View
+                className={
+                  voiceAssistantConversationThemeClass.headerRightActions
                 }
               >
-                <VoiceAssistantIcon
-                  name={mode === "voice" ? "text" : "phone"}
-                  size={20}
-                  color="#111827"
+                <TouchableOpacity
+                  className={voiceAssistantConversationThemeClass.headerButton}
+                  onPress={() =>
+                    onChangeMode(mode === "voice" ? "text" : "voice")
+                  }
+                  testID={
+                    mode === "voice"
+                      ? "conversation-close-voice-button"
+                      : "conversation-open-voice-button"
+                  }
+                >
+                  <VoiceAssistantIcon
+                    name={mode === "voice" ? "text" : "phone"}
+                    size={20}
+                    color="#111827"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <ScrollView
+            className={voiceAssistantConversationThemeClass.messageArea}
+            contentContainerStyle={
+              voiceAssistantThemeStyle.conversationScrollContent
+            }
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {session.messages.map((message) => (
+              <VoiceAssistantMessageBubble key={message.id} message={message} />
+            ))}
+            {pendingAssistantMessage ? (
+              <VoiceAssistantMessageBubble message={pendingAssistantMessage} />
+            ) : null}
+          </ScrollView>
+
+          <View
+            className={voiceAssistantConversationThemeClass.composerDock}
+            style={{ paddingBottom: Math.max(insets.bottom, 8) + androidKeyboardOffset }}
+          >
+            <View
+              className={voiceAssistantConversationThemeClass.composerContainer}
+            >
+              <View className={voiceAssistantConversationThemeClass.inputShell}>
+                <TextInput
+                  className={voiceAssistantConversationThemeClass.inputField}
+                  onChangeText={setDraft}
+                  placeholder="输入消息..."
+                  placeholderTextColor="#9CA3AF"
+                  testID="conversation-message-input"
+                  value={draft}
                 />
+              </View>
+
+              <TouchableOpacity
+                className={`${voiceAssistantConversationThemeClass.primaryComposerAction} ${
+                  canSend ? "" : "opacity-40"
+                }`}
+                disabled={!canSend}
+                onPress={onSend}
+                testID="conversation-send-button"
+              >
+                <Text
+                  className={
+                    voiceAssistantConversationThemeClass.primaryComposerActionText
+                  }
+                >
+                  发送
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        <ScrollView
-          className={voiceAssistantConversationThemeClass.messageArea}
-          contentContainerStyle={
-            voiceAssistantThemeStyle.conversationScrollContent
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {session.messages.map((message) => (
-            <VoiceAssistantMessageBubble key={message.id} message={message} />
-          ))}
-          {pendingAssistantMessage ? (
-            <VoiceAssistantMessageBubble message={pendingAssistantMessage} />
-          ) : null}
-        </ScrollView>
-
-        <View className={voiceAssistantConversationThemeClass.composerDock}>
-          <View
-            className={voiceAssistantConversationThemeClass.composerContainer}
-          >
-            <View className={voiceAssistantConversationThemeClass.inputShell}>
-              <TextInput
-                className={voiceAssistantConversationThemeClass.inputField}
-                onChangeText={setDraft}
-                placeholder="输入消息..."
-                placeholderTextColor="#9CA3AF"
-                testID="conversation-message-input"
-                value={draft}
+          {mode === "voice" ? (
+            <View className="absolute inset-0 z-20">
+              <VoiceAssistantScreen
+                session={session}
+                onExitVoice={() => onChangeMode("text")}
+                onOpenDrawer={onOpenDrawer}
+                autoStartOnMount={false}
               />
             </View>
-
-            <TouchableOpacity
-              className={`${voiceAssistantConversationThemeClass.primaryComposerAction} ${
-                canSend ? "" : "opacity-40"
-              }`}
-              disabled={!canSend}
-              onPress={onSend}
-              testID="conversation-send-button"
-            >
-              <Text
-                className={
-                  voiceAssistantConversationThemeClass.primaryComposerActionText
-                }
-              >
-                发送
-              </Text>
-            </TouchableOpacity>
-          </View>
+          ) : null}
         </View>
-
-        {mode === "voice" ? (
-          <View className="absolute inset-0 z-20">
-            <VoiceAssistantScreen
-              session={session}
-              onExitVoice={() => onChangeMode("text")}
-              onOpenDrawer={onOpenDrawer}
-              autoStartOnMount={false}
-            />
-          </View>
-        ) : null}
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

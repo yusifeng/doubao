@@ -844,3 +844,32 @@
   - Test-only resolver typing changes should not affect runtime behavior.
 - Rollback:
   - Revert the two source files above to restore previous typing and test resolver declarations.
+
+## 2026-04-08 01:24 (CST) - refactor(ui): unify app dialogs and stabilize keyboard offset
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `src/shared/ui/AppDialog.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantSessionDrawerContent.tsx`
+  - `app/settings/s2s.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `package.json`
+  - `pnpm-lock.yaml`
+- Summary:
+  - Added a shared `AppDialog` abstraction based on native `Modal` and migrated voice session long-press actions plus the custom voice tip dialog to this unified implementation.
+  - Removed `react-native-paper` dependency after dialog migration, including lockfile cleanup.
+  - Reworked session long-press dialog sequencing to avoid close/open flicker by separating visibility state from selected conversation payload and chaining rename-open after action dialog hide.
+  - Hardened `AppDialog` hide callback timing so rerenders during fade-out do not drop `onModalHide`, and moved dialog `testID` to the tappable backdrop node for automation compatibility.
+  - Improved Android chat keyboard handling by adding resize-aware offset logic and guarding against baseline-height overwrite during `adjustResize` transition events.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx app/settings/__tests__/settingsRoutes.test.tsx` (pass, existing act warning in drawer test)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx app/settings/__tests__/settingsRoutes.test.tsx` (pass, same existing act warning)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings in final run)
+- Risk:
+  - Dialog layout now caps at `300` and adapts by viewport width; visual density on very narrow devices may differ from previous material dialog defaults and should be checked on target devices.
+  - Android keyboard compensation combines system resize detection plus manual offset; OEM-specific keyboard behaviors may still require device-level verification.
+- Rollback:
+  - Revert the scoped UI/dialog/runtime files above and restore `react-native-paper` in `package.json` + `pnpm-lock.yaml` to return to previous dialog behavior.
