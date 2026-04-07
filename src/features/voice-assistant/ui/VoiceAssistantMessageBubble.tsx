@@ -27,10 +27,7 @@ export function VoiceAssistantMessageBubble({ message }: VoiceAssistantMessageBu
   if (shouldUseAssistantCard) {
     return (
       <View className={voiceAssistantBubbleThemeClass.assistantCardWrap}>
-        <View
-          className={voiceAssistantBubbleThemeClass.assistantCardPanel}
-          style={voiceAssistantThemeStyle.whiteCardShadow}
-        >
+        <View className={voiceAssistantBubbleThemeClass.assistantCardPanel}>
           <Text className={voiceAssistantBubbleThemeClass.assistantCardText}>
             {segments.map((segment, index) => (
               <Text
@@ -42,24 +39,16 @@ export function VoiceAssistantMessageBubble({ message }: VoiceAssistantMessageBu
             ))}
           </Text>
         </View>
+        <View className={voiceAssistantBubbleThemeClass.assistantDivider} />
         <View className={voiceAssistantBubbleThemeClass.assistantActions}>
           <View className={voiceAssistantBubbleThemeClass.assistantActionLeft}>
-            <TouchableOpacity
-              className={voiceAssistantBubbleThemeClass.assistantActionButton}
-              style={voiceAssistantThemeStyle.assistantActionShadow}
-            >
+            <TouchableOpacity className={voiceAssistantBubbleThemeClass.assistantActionButton}>
               <VoiceAssistantIcon name="copy" size={18} color="#0A7CFF" />
             </TouchableOpacity>
-            <TouchableOpacity
-              className={voiceAssistantBubbleThemeClass.assistantActionButton}
-              style={voiceAssistantThemeStyle.assistantActionShadow}
-            >
+            <TouchableOpacity className={voiceAssistantBubbleThemeClass.assistantActionButton}>
               <VoiceAssistantIcon name="speaker" size={18} color="#0A7CFF" />
             </TouchableOpacity>
-            <TouchableOpacity
-              className={voiceAssistantBubbleThemeClass.assistantActionButton}
-              style={voiceAssistantThemeStyle.assistantActionShadow}
-            >
+            <TouchableOpacity className={voiceAssistantBubbleThemeClass.assistantActionButton}>
               <VoiceAssistantIcon name="bookmark" size={18} color="#0A7CFF" />
             </TouchableOpacity>
           </View>
