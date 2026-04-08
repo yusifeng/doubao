@@ -1260,3 +1260,26 @@
   - Runtime hint messages now include dynamic error details in some branches (`F7`), which may expose noisier raw SDK/network wording.
 - Rollback:
   - Revert the files above to restore pre-signature hint behavior and previous runbook wording.
+
+## 2026-04-09 03:31 (CST) - fix(voice-chat): remove pending placeholder flicker
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+- Summary:
+  - Removed synthetic `"思考中..."` pending bubble from conversation list; pending assistant message now renders only when real stream text exists.
+  - Unified pending-to-final transition by suppressing pending bubble rendering when its text already matches the latest persisted assistant message, eliminating transient duplicate assistant bubbles at finalize time.
+  - Added UI regression tests to lock both behaviors: no pre-token placeholder bubble and no duplicate final bubble when pending equals persisted final text.
+  - Marked active refactor plan item “收敛消息草稿渲染路径，解决首帧闪烁” as completed.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx` (pass)
+- Risk:
+  - Removing placeholder bubble may reduce perceived progress feedback before first token under high-latency replies.
+  - Pending/final de-dup currently compares normalized text against last persisted assistant message; if future message ordering semantics change, this heuristic should be revalidated.
+- Rollback:
+  - Revert the files above to restore placeholder-first pending rendering and previous pending/final list merge behavior.

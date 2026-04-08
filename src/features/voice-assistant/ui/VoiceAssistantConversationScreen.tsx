@@ -60,8 +60,8 @@ export function VoiceAssistantConversationScreen({
     [session.activeConversationId, session.conversations],
   );
   const pendingAssistantMessage = useMemo<Message | null>(() => {
-    const raw = session.pendingAssistantReply.trim();
-    if (!raw && session.status !== "thinking") {
+    const raw = session.pendingAssistantReply;
+    if (!raw.trim()) {
       return null;
     }
     if (!session.activeConversationId) {
@@ -71,19 +71,29 @@ export function VoiceAssistantConversationScreen({
       id: `pending-assistant-reply-${session.activeConversationId}`,
       conversationId: session.activeConversationId,
       role: "assistant",
-      content: raw || "思考中...",
+      content: raw,
       type: "text",
       createdAt: -1,
     };
   }, [
     session.activeConversationId,
     session.pendingAssistantReply,
-    session.status,
   ]);
-  const renderedMessages = useMemo(
-    () => (pendingAssistantMessage ? [...session.messages, pendingAssistantMessage] : session.messages),
-    [pendingAssistantMessage, session.messages],
-  );
+  const renderedMessages = useMemo(() => {
+    if (!pendingAssistantMessage) {
+      return session.messages;
+    }
+    const lastPersistedMessage =
+      session.messages.length > 0 ? session.messages[session.messages.length - 1] : null;
+    const pendingAlreadyPersisted =
+      lastPersistedMessage?.role === "assistant" &&
+      lastPersistedMessage.type === pendingAssistantMessage.type &&
+      lastPersistedMessage.content.trim() === pendingAssistantMessage.content.trim();
+    if (pendingAlreadyPersisted) {
+      return session.messages;
+    }
+    return [...session.messages, pendingAssistantMessage];
+  }, [pendingAssistantMessage, session.messages]);
   const renderMessageItem = useCallback(
     ({ item }: { item: Message }) => <VoiceAssistantMessageBubble message={item} />,
     [],

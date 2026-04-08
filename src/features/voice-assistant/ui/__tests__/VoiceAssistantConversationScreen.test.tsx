@@ -156,6 +156,49 @@ describe('VoiceAssistantConversationScreen', () => {
     expect(screen.queryByText('发现智能体')).toBeNull();
   });
 
+  it('does not render placeholder pending bubble before first reply token', () => {
+    const session = createSession();
+    session.status = 'thinking';
+    session.pendingAssistantReply = '';
+
+    renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="text"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('思考中...')).toBeNull();
+  });
+
+  it('does not duplicate pending bubble when final assistant text is already persisted', () => {
+    const session = createSession();
+    session.messages = [
+      {
+        id: 'msg-final',
+        conversationId: 'conv-1',
+        role: 'assistant',
+        content: '这是最终回复',
+        type: 'text',
+        createdAt: Date.now(),
+      },
+    ];
+    session.pendingAssistantReply = '这是最终回复';
+
+    renderScreen(
+      <VoiceAssistantConversationScreen
+        session={session}
+        mode="text"
+        onChangeMode={jest.fn()}
+        onOpenDrawer={jest.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('这是最终回复')).toHaveLength(1);
+  });
+
   it('shows session debug dialog with session id, role and scrollable system prompt', () => {
     const session = createSession();
     const longPrompt = Array.from({ length: 20 }, (_, index) => `第${index + 1}行提示词`).join('\n');
