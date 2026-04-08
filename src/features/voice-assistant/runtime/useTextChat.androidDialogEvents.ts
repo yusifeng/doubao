@@ -527,7 +527,7 @@ export function handleAndroidDialogPayloadEvent(
       const draftText = finalizeOfficialS2SReply(
         event.text,
         deps.androidAssistantDraftRef.current,
-        deps.pendingAssistantReply,
+        deps.pendingAssistantReplyRef.current,
       ).trim();
       const finalText = sanitizeAssistantText(draftText);
       const finalTurnKey = resolvePlatformReplyTurnKey(event, finalConversationId);
@@ -579,6 +579,7 @@ export function handleAndroidDialogPayloadEvent(
           );
           deps.recordAudit('reply.platform.final', { extra: { textLength: mergedFinalText.length } });
           deps.setLiveUserTranscript('');
+          deps.pendingAssistantReplyRef.current = '';
           deps.setPendingAssistantReply('');
           deps.androidAssistantDraftRef.current = '';
           if (finalConversationId && mergedFinalText) {
@@ -616,7 +617,7 @@ export function handleAndroidDialogPayloadEvent(
               await deps.updateConversationRuntimeStatus('listening', { refreshConversations: true });
             }
           } else {
-            await deps.stopAndroidDialogConversation();
+            await deps.stopAndroidDialogConversation({ persistPendingAssistantDraft: false });
             deps.resetRealtimeCallState();
             await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
           }

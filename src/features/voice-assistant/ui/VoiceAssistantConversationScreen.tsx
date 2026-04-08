@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -67,18 +68,27 @@ export function VoiceAssistantConversationScreen({
       return null;
     }
     return {
-      id: "pending-assistant-reply",
+      id: `pending-assistant-reply-${session.activeConversationId}`,
       conversationId: session.activeConversationId,
       role: "assistant",
       content: raw || "思考中...",
       type: "text",
-      createdAt: Date.now(),
+      createdAt: -1,
     };
   }, [
     session.activeConversationId,
     session.pendingAssistantReply,
     session.status,
   ]);
+  const renderedMessages = useMemo(
+    () => (pendingAssistantMessage ? [...session.messages, pendingAssistantMessage] : session.messages),
+    [pendingAssistantMessage, session.messages],
+  );
+  const renderMessageItem = useCallback(
+    ({ item }: { item: Message }) => <VoiceAssistantMessageBubble message={item} />,
+    [],
+  );
+  const messageKeyExtractor = useCallback((item: Message) => item.id, []);
 
   const canSend = draft.trim().length > 0;
   const activeRole = useMemo(
@@ -383,22 +393,18 @@ export function VoiceAssistantConversationScreen({
             </View>
           </View>
 
-          <ScrollView
+          <FlatList
             className={voiceAssistantConversationThemeClass.messageArea}
+            data={renderedMessages}
             contentContainerStyle={
               voiceAssistantThemeStyle.conversationScrollContent
             }
+            keyExtractor={messageKeyExtractor}
+            renderItem={renderMessageItem}
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-          >
-            {session.messages.map((message) => (
-              <VoiceAssistantMessageBubble key={message.id} message={message} />
-            ))}
-            {pendingAssistantMessage ? (
-              <VoiceAssistantMessageBubble message={pendingAssistantMessage} />
-            ) : null}
-          </ScrollView>
+          />
 
           <View
             className={voiceAssistantConversationThemeClass.composerDock}

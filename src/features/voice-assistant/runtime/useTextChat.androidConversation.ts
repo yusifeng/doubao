@@ -47,7 +47,9 @@ export function createAndroidConversationHandlers(deps: any) {
     if (!targetConversationId) {
       return;
     }
-    const draftText = sanitizeAssistantText((deps.androidAssistantDraftRef.current || deps.pendingAssistantReply).trim());
+    const draftText = sanitizeAssistantText(
+      (deps.androidAssistantDraftRef.current || deps.pendingAssistantReplyRef.current || '').trim(),
+    );
     if (!draftText) {
       return;
     }
@@ -88,6 +90,7 @@ export function createAndroidConversationHandlers(deps: any) {
       await deps.androidSessionController.stopConversation();
       deps.androidDialogModeRef.current = null;
       deps.androidAssistantDraftRef.current = '';
+      deps.pendingAssistantReplyRef.current = '';
       deps.setPendingAssistantReply('');
       deps.setLiveUserTranscript('');
       deps.clearTurnTrace();
@@ -166,6 +169,7 @@ export function createAndroidConversationHandlers(deps: any) {
     await deps.androidSessionController.stopConversation();
     deps.androidDialogModeRef.current = null;
     deps.androidAssistantDraftRef.current = '';
+    deps.pendingAssistantReplyRef.current = '';
     deps.setPendingAssistantReply('');
     deps.setLiveUserTranscript('');
     deps.recordAudit('session.stopped');

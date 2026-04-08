@@ -1072,3 +1072,33 @@
   - Fail-closed reply-chain behavior is stricter than fallback behavior and will surface more user-facing config errors by design.
 - Rollback:
   - Revert the scoped runtime/UI files and dependency changes above to restore previous `chat_final` persistence logic, fallback reply behavior, and non-interactive copy button.
+
+## 2026-04-09 00:11 (CST) - fix(voice-chat): stabilize pending reply rendering
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidConversation.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogRuntime.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantConversationScreen.tsx`
+  - `src/features/voice-assistant/ui/VoiceAssistantMessageBubble.tsx`
+- Summary:
+  - Fixed stale `pendingAssistantReply` race by introducing runtime-synced reply setter (`ref + state`) and using `ref` reads in Android conversation/event/runtime paths.
+  - Prevented duplicate truncated assistant落库 on text rounds by skipping draft persistence during post-`chat_final` stop (`persistPendingAssistantDraft: false`) and clearing pending draft state before stop.
+  - Added Android runtime regression test for `chat_partial -> chat_final` text round to assert only one final assistant message is persisted.
+  - Reduced UI flicker by switching conversation message rendering from `ScrollView` to `FlatList` with stable keys and stable pending message identity.
+  - Reduced unnecessary message bubble rerenders via `React.memo` and memoized assistant text segment extraction.
+  - Added lightweight pending-reply render throttle (48ms max update cadence, immediate on first token/clear) to smooth streaming text updates.
+- Tests:
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantMessageBubble.test.tsx` (pass)
+  - `pnpm exec tsc --noEmit` (pass)
+- Risk:
+  - Pending reply render throttling may slightly delay visible token updates under high-frequency streams.
+  - `FlatList` virtualization behavior can differ from previous `ScrollView` rendering on very short/very long histories.
+- Rollback:
+  - Revert the scoped runtime/UI files above to restore non-throttled pending rendering, previous `ScrollView` list behavior, and pre-fix draft finalization flow.

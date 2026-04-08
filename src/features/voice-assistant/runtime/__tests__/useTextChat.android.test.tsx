@@ -674,6 +674,42 @@ describe('useTextChat android dialog sdk flow', () => {
     });
   });
 
+  it('does not persist stale partial draft after text chat_final finalization', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('你是谁');
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('text-session-stale-partial');
+      mockDialogListener?.({
+        type: 'chat_partial',
+        text: '啊啊啊，我是江户川柯南，帝',
+        sessionId,
+      });
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '啊啊啊，我是江户川柯南，帝丹小学一年级的学生。',
+        sessionId,
+      });
+    });
+
+    await waitFor(() => {
+      const assistantMessages = result.current.messages.filter((message) => message.role === 'assistant');
+      expect(
+        assistantMessages.filter(
+          (message) => message.content === '啊啊啊，我是江户川柯南，帝丹小学一年级的学生。',
+        ),
+      ).toHaveLength(1);
+      expect(assistantMessages.some((message) => message.content === '啊啊啊，我是江户川柯南，帝')).toBe(false);
+    });
+  });
+
   it('merges snapshot-style partials without duplicating assistant text', async () => {
     const { result } = renderHook(() => useTextChat());
 

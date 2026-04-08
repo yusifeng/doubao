@@ -29,6 +29,7 @@ export function createAndroidDialogRuntimeHandlers(deps: {
   realtimeCallPhaseRef: { current: string };
   voiceLoopActiveRef: { current: boolean };
   pendingAssistantReply: string;
+  pendingAssistantReplyRef: { current: string };
   androidAssistantDraftRef: { current: string };
   ensureTurnTrace: (seed?: any) => { traceId: string; questionId?: string; replyId?: string };
   dispatchDialogOrchestrator: (action: any) => void;
@@ -230,7 +231,9 @@ export function createAndroidDialogRuntimeHandlers(deps: {
     }
 
     deps.androidDialogInterruptInFlightRef.current = true;
-    const interruptedText = sanitizeAssistantText((deps.androidAssistantDraftRef.current || deps.pendingAssistantReply).trim());
+    const interruptedText = sanitizeAssistantText(
+      (deps.androidAssistantDraftRef.current || deps.pendingAssistantReplyRef.current || '').trim(),
+    );
 
     try {
       await deps.androidSessionController.interruptCurrentDialog();

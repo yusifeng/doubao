@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { Text, TouchableOpacity, View } from 'react-native';
 import {
@@ -12,9 +13,12 @@ type VoiceAssistantMessageBubbleProps = {
   message: Message;
 };
 
-export function VoiceAssistantMessageBubble({ message }: VoiceAssistantMessageBubbleProps) {
+function VoiceAssistantMessageBubbleImpl({ message }: VoiceAssistantMessageBubbleProps) {
   const isAssistant = message.role === 'assistant';
-  const segments = isAssistant ? extractAssistantDisplaySegments(message.content) : [];
+  const segments = useMemo(
+    () => (isAssistant ? extractAssistantDisplaySegments(message.content) : []),
+    [isAssistant, message.content],
+  );
   const { showToast } = useAppToast();
 
   if (!isAssistant) {
@@ -76,3 +80,17 @@ export function VoiceAssistantMessageBubble({ message }: VoiceAssistantMessageBu
     </View>
   );
 }
+
+function areMessageBubblePropsEqual(
+  prev: VoiceAssistantMessageBubbleProps,
+  next: VoiceAssistantMessageBubbleProps,
+): boolean {
+  return (
+    prev.message.id === next.message.id &&
+    prev.message.role === next.message.role &&
+    prev.message.type === next.message.type &&
+    prev.message.content === next.message.content
+  );
+}
+
+export const VoiceAssistantMessageBubble = memo(VoiceAssistantMessageBubbleImpl, areMessageBubblePropsEqual);

@@ -112,6 +112,7 @@ function mergeAssistantDraft(currentDraft: string, incomingText: string): string
 
 export function useTextChat(): UseTextChatResult {
   const isTestEnv = process.env.NODE_ENV === 'test';
+  const PENDING_REPLY_RENDER_THROTTLE_MS = 48;
   const repo = useMemo(
     () => (isTestEnv ? new InMemoryConversationRepo() : new PersistentConversationRepo()),
     [isTestEnv],
@@ -205,6 +206,9 @@ export function useTextChat(): UseTextChatResult {
   const [realtimeListeningState, setRealtimeListeningState] = useState<RealtimeListeningState>('ready');
   const [liveUserTranscript, setLiveUserTranscript] = useState('');
   const [pendingAssistantReply, setPendingAssistantReply] = useState('');
+  const pendingAssistantReplyRef = useRef(pendingAssistantReply);
+  const pendingAssistantReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAssistantReplyLastCommitAtRef = useRef(0);
   const [connectivityHint, setConnectivityHint] = useState('尚未测试连接');
   const [voiceDebugLastEvent, setVoiceDebugLastEvent] = useState('none');
   const [s2sSessionReady, setS2SSessionReady] = useState(false);
@@ -218,6 +222,57 @@ export function useTextChat(): UseTextChatResult {
   useEffect(() => {
     runtimeConfigHydratedRef.current = runtimeConfigHydrated;
   }, [runtimeConfigHydrated]);
+
+  useEffect(() => {
+    pendingAssistantReplyRef.current = pendingAssistantReply;
+  }, [pendingAssistantReply]);
+
+  const commitPendingAssistantReply = useCallback((value: string) => {
+    pendingAssistantReplyLastCommitAtRef.current = Date.now();
+    setPendingAssistantReply((current) => (current === value ? current : value));
+  }, []);
+
+  const clearPendingAssistantReplyTimer = useCallback(() => {
+    if (pendingAssistantReplyTimerRef.current) {
+      clearTimeout(pendingAssistantReplyTimerRef.current);
+      pendingAssistantReplyTimerRef.current = null;
+    }
+  }, []);
+
+  const setPendingAssistantReplyRuntime = useCallback((value: string) => {
+    pendingAssistantReplyRef.current = value;
+    const next = value;
+    const isClearing = next.length === 0;
+    const isFirstVisibleReply = pendingAssistantReply.length === 0 && next.length > 0;
+    const now = Date.now();
+    const elapsed = now - pendingAssistantReplyLastCommitAtRef.current;
+    const shouldCommitImmediately =
+      isClearing || isFirstVisibleReply || elapsed >= PENDING_REPLY_RENDER_THROTTLE_MS;
+    if (shouldCommitImmediately) {
+      clearPendingAssistantReplyTimer();
+      commitPendingAssistantReply(next);
+      return;
+    }
+
+    clearPendingAssistantReplyTimer();
+    const waitMs = Math.max(0, PENDING_REPLY_RENDER_THROTTLE_MS - elapsed);
+    pendingAssistantReplyTimerRef.current = setTimeout(() => {
+      pendingAssistantReplyTimerRef.current = null;
+      commitPendingAssistantReply(pendingAssistantReplyRef.current);
+    }, waitMs);
+  }, [
+    PENDING_REPLY_RENDER_THROTTLE_MS,
+    clearPendingAssistantReplyTimer,
+    commitPendingAssistantReply,
+    pendingAssistantReply,
+  ]);
+
+  useEffect(
+    () => () => {
+      clearPendingAssistantReplyTimer();
+    },
+    [clearPendingAssistantReplyTimer],
+  );
 
   useRuntimeConfigHydrationEffect({
     setRuntimeConfig,
@@ -257,7 +312,7 @@ export function useTextChat(): UseTextChatResult {
         setMessages,
         setConversations,
         setLiveUserTranscript,
-        setPendingAssistantReply,
+        setPendingAssistantReply: setPendingAssistantReplyRuntime,
         setRealtimeCallPhase,
         setRealtimeListeningState,
         setIsVoiceActive,
@@ -397,6 +452,7 @@ export function useTextChat(): UseTextChatResult {
         activeConversationId,
         conversations,
         pendingAssistantReply,
+        pendingAssistantReplyRef,
         repo,
         providers,
         runtimeConfig,
@@ -409,7 +465,7 @@ export function useTextChat(): UseTextChatResult {
         rememberRetiredAndroidDialogSession,
         clearTurnTrace,
         setConversations,
-        setPendingAssistantReply,
+        setPendingAssistantReply: setPendingAssistantReplyRuntime,
         setLiveUserTranscript,
         androidSessionController,
         androidDialogWorkMode,
@@ -518,10 +574,11 @@ export function useTextChat(): UseTextChatResult {
     realtimeCallPhaseRef,
     voiceLoopActiveRef,
     pendingAssistantReply,
+    pendingAssistantReplyRef,
     androidAssistantDraftRef,
     ensureTurnTrace,
     dispatchDialogOrchestrator,
-    setPendingAssistantReply,
+    setPendingAssistantReply: setPendingAssistantReplyRuntime,
     setLiveUserTranscript,
     setConnectivityHint,
     setConversations,
@@ -628,7 +685,7 @@ export function useTextChat(): UseTextChatResult {
         maybeInterruptOnBargeIn,
         androidDialogInterruptedRef,
         setLiveUserTranscript,
-        setPendingAssistantReply,
+        setPendingAssistantReply: setPendingAssistantReplyRuntime,
         androidAssistantDraftRef,
         activeConversationId,
         ensureTurnTrace,
@@ -645,6 +702,7 @@ export function useTextChat(): UseTextChatResult {
         recoverFromPlatformReplyLeakInCustomMode,
         mergeAssistantDraft,
         pendingAssistantReply,
+        pendingAssistantReplyRef,
       }),
     [
       activeConversationId,
@@ -701,7 +759,7 @@ export function useTextChat(): UseTextChatResult {
     ensureTurnTrace,
     clearTurnTrace,
     createTurnTraceId,
-    setPendingAssistantReply,
+    setPendingAssistantReply: setPendingAssistantReplyRuntime,
     setLiveUserTranscript,
     setConnectivityHint,
     setConversations,
@@ -874,7 +932,7 @@ export function useTextChat(): UseTextChatResult {
         setIsVoiceActive,
         setVoiceInputMutedRuntime,
         setLiveUserTranscript,
-        setPendingAssistantReply,
+        setPendingAssistantReply: setPendingAssistantReplyRuntime,
         setConnectivityHint,
         performAndroidDialogInterrupt,
         dispatchDialogOrchestrator,
