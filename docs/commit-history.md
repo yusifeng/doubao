@@ -26,6 +26,33 @@
 
 ## Entries
 
+## 2026-04-08 17:25 (CST) - feat(settings): add reply stream mode control
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/config/env.ts`
+  - `src/features/voice-assistant/config/runtimeConfig.ts`
+  - `src/features/voice-assistant/config/runtimeConfigRepo.ts`
+  - `src/features/voice-assistant/config/__tests__/runtimeConfig.test.ts`
+  - `src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts`
+  - `app/settings/index.tsx`
+  - `app/settings/reply-mode.tsx`
+  - `app/settings/__tests__/replyMode.test.tsx`
+  - `app/settings/__tests__/settingsRoutes.test.tsx`
+  - `app/settings/__tests__/persona.test.tsx`
+- Summary:
+  - Introduced runtime-level `replyStreamMode` with three options: `auto`, `force_stream`, and `force_non_stream`.
+  - Persisted stream mode in runtime config storage and merged it into save/equality flows.
+  - Added settings UI controls for stream strategy and surfaced the combined reply-chain summary on settings home.
+  - Added config/settings tests to cover env parsing, persistence, and save payload behavior.
+- Tests:
+  - `pnpm exec jest src/features/voice-assistant/config/__tests__/runtimeConfig.test.ts src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts app/settings/__tests__/replyMode.test.tsx app/settings/__tests__/settingsRoutes.test.tsx app/settings/__tests__/persona.test.tsx` (pass)
+- Risk:
+  - Existing sessions keep current in-memory strategy until next runtime config refresh; live-call behavior depends on runtime rebind timing.
+- Rollback:
+  - Revert the scoped config/settings/test files above to remove stream-mode controls and restore prior chain-only configuration.
+
 ## 2026-04-08 06:23 (CST) - chore(repo): stop tracking my-doubao-pic reference images
 
 - Commit: pending

@@ -8,7 +8,13 @@ export default function SettingsHomeRoute() {
   const session = useVoiceAssistantRuntime();
 
   const replyModeSummary =
-    session.runtimeConfig.replyChainMode === 'custom_llm' ? '自定义 LLM' : '官方 S2S';
+    `${session.runtimeConfig.replyChainMode === 'custom_llm' ? '自定义 LLM' : '官方 S2S'} · ${
+      session.runtimeConfig.replyStreamMode === 'force_stream'
+        ? '强制流式'
+        : session.runtimeConfig.replyStreamMode === 'force_non_stream'
+        ? '强制非流式'
+        : '自动'
+    }`;
   const s2sSummary = session.runtimeConfig.s2s.appId.trim()
     ? `App ID: ${session.runtimeConfig.s2s.appId}`
     : '未配置';

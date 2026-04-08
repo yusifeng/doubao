@@ -6,8 +6,10 @@ import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
 import {
   readLLMEnv,
   readReplyChainMode,
+  readReplyStreamMode,
   readS2SEnv,
   type ReplyChainMode,
+  type ReplyStreamMode,
 } from './env';
 
 export type VoiceOptionSource = 'default' | 'remote';
@@ -49,6 +51,7 @@ export type RuntimePersonaConfig = {
 
 export type RuntimeConfig = {
   replyChainMode: ReplyChainMode;
+  replyStreamMode: ReplyStreamMode;
   llm: RuntimeLLMConfig;
   s2s: RuntimeS2SConfig;
   persona: RuntimePersonaConfig;
@@ -64,6 +67,7 @@ export type RuntimeConfig = {
 
 export type RuntimeConfigDraft = Partial<{
   replyChainMode: ReplyChainMode;
+  replyStreamMode: ReplyStreamMode;
   llm: Partial<RuntimeLLMConfig>;
   s2s: Partial<RuntimeS2SConfig>;
   persona: Partial<RuntimePersonaConfig>;
@@ -199,6 +203,7 @@ export function readRuntimeConfigFromEnv(): RuntimeConfig {
   });
   return {
     replyChainMode: readReplyChainMode(),
+    replyStreamMode: readReplyStreamMode(),
     llm: {
       baseUrl: envLLM?.baseUrl ?? '',
       apiKey: envLLM?.apiKey ?? '',
@@ -240,6 +245,7 @@ export function mergeRuntimeConfig(base: RuntimeConfig, draft?: RuntimeConfigDra
 
   return {
     replyChainMode: draft.replyChainMode ?? base.replyChainMode,
+    replyStreamMode: draft.replyStreamMode ?? base.replyStreamMode,
     llm: {
       baseUrl: nextLLM.baseUrl ?? base.llm.baseUrl,
       apiKey: nextLLM.apiKey ?? base.llm.apiKey,
@@ -301,6 +307,7 @@ export function isRuntimeConfigEqual(left: RuntimeConfig, right: RuntimeConfig):
     });
   return (
     left.replyChainMode === right.replyChainMode &&
+    left.replyStreamMode === right.replyStreamMode &&
     left.llm.baseUrl === right.llm.baseUrl &&
     left.llm.apiKey === right.llm.apiKey &&
     left.llm.model === right.llm.model &&

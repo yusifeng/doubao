@@ -43,6 +43,7 @@ const baseSession: UseTextChatResult = {
   connectivityHint: 'ok',
   runtimeConfig: {
     replyChainMode: 'official_s2s',
+    replyStreamMode: 'auto',
     llm: { baseUrl: 'https://x', apiKey: 'k', model: 'm', provider: 'openai-compatible' },
     s2s: { appId: 'app-id', accessToken: 'token', wsUrl: 'wss://example.com' },
     persona: {

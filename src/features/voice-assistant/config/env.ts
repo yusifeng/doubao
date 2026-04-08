@@ -13,6 +13,7 @@ export type LLMEnvConfig = {
 
 export type VoicePipelineMode = 'asr_text' | 'realtime_audio';
 export type ReplyChainMode = 'official_s2s' | 'custom_llm';
+export type ReplyStreamMode = 'auto' | 'force_stream' | 'force_non_stream';
 
 export function readS2SEnv(): S2SEnvConfig | null {
   const appId = process.env.EXPO_PUBLIC_S2S_APP_ID?.trim() ?? '';
@@ -56,4 +57,15 @@ export function readReplyChainMode(): ReplyChainMode {
     return 'custom_llm';
   }
   return 'official_s2s';
+}
+
+export function readReplyStreamMode(): ReplyStreamMode {
+  const value = process.env.EXPO_PUBLIC_REPLY_STREAM_MODE?.trim().toLowerCase();
+  if (value === 'force_stream') {
+    return 'force_stream';
+  }
+  if (value === 'force_non_stream') {
+    return 'force_non_stream';
+  }
+  return 'auto';
 }

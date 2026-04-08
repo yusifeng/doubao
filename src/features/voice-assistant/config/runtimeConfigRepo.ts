@@ -45,6 +45,7 @@ let secureStoreAdapter = defaultSecureStoreAdapter;
 
 type StoredRuntimeConfig = {
   replyChainMode?: RuntimeConfig['replyChainMode'];
+  replyStreamMode?: RuntimeConfig['replyStreamMode'];
   llm?: {
     baseUrl?: string;
     model?: string;
@@ -114,6 +115,7 @@ export async function getEffectiveRuntimeConfig(): Promise<RuntimeConfig> {
 
   return mergeRuntimeConfig(env, {
     replyChainMode: stored.replyChainMode,
+    replyStreamMode: stored.replyStreamMode,
     llm: {
       baseUrl: stored.llm?.baseUrl,
       apiKey: llmApiKey || undefined,
@@ -135,6 +137,7 @@ export async function getEffectiveRuntimeConfig(): Promise<RuntimeConfig> {
 export async function saveRuntimeConfig(nextConfig: RuntimeConfig): Promise<RuntimeConfig> {
   await writeStoredRuntimeConfig({
     replyChainMode: nextConfig.replyChainMode,
+    replyStreamMode: nextConfig.replyStreamMode,
     llm: {
       baseUrl: nextConfig.llm.baseUrl,
       model: nextConfig.llm.model,

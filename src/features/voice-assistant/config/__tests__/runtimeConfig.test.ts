@@ -43,6 +43,7 @@ describe('runtimeConfig', () => {
     expect(merged.persona.source).toBe(base.persona.source);
     expect(merged.androidDialog.appKeyOverride).toBe(base.androidDialog.appKeyOverride);
     expect(merged.voice.speakerId).toBe(base.voice.speakerId);
+    expect(merged.replyStreamMode).toBe(base.replyStreamMode);
   });
 
   test('isComplete checks should be null-safe for legacy bad data', () => {

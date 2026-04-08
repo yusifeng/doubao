@@ -6,8 +6,10 @@ const mockSaveRuntimeConfig = jest.fn().mockResolvedValue({ ok: true, message: '
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({
-    replace: jest.fn(),
+    back: jest.fn(),
+    canGoBack: () => true,
     push: jest.fn(),
+    replace: jest.fn(),
   }),
   useNavigation: () => ({
     dispatch: jest.fn(),
@@ -79,52 +81,39 @@ function createSession(): UseTextChatResult {
   };
 }
 
-describe('SettingsPersonaRoute', () => {
+describe('SettingsReplyModeRoute', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseVoiceAssistantRuntime.mockReturnValue(createSession());
   });
 
-  it('supports adding and deleting custom roles', async () => {
+  it('renders reply mode and stream mode cards', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const SettingsPersonaRoute = require('../persona').default;
-    render(<SettingsPersonaRoute />);
+    const SettingsReplyModeRoute = require('../reply-mode').default;
+    render(<SettingsReplyModeRoute />);
 
-    fireEvent.changeText(screen.getByTestId('settings-persona-new-role-name-input'), '福尔摩斯');
-    fireEvent.changeText(
-      screen.getByTestId('settings-persona-new-role-prompt-input'),
-      '你是 Sherlock Holmes，擅长推理。',
-    );
-    fireEvent.press(screen.getByTestId('settings-persona-add-role-button'));
-
-    expect(screen.getByText('福尔摩斯')).toBeTruthy();
-    fireEvent.press(screen.getByText('删除'));
-
-    await waitFor(() => {
-      expect(screen.queryByText('福尔摩斯')).toBeNull();
-    });
+    expect(screen.getByTestId('settings-reply-mode-card')).toBeTruthy();
+    expect(screen.getByTestId('settings-reply-stream-mode-card')).toBeTruthy();
+    expect(screen.getByText('自动（推荐）')).toBeTruthy();
+    expect(screen.getByText('强制流式')).toBeTruthy();
+    expect(screen.getByText('强制非流式')).toBeTruthy();
   });
 
-  it('saves selected custom role as active persona', async () => {
+  it('saves reply chain mode and stream mode together', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const SettingsPersonaRoute = require('../persona').default;
-    render(<SettingsPersonaRoute />);
+    const SettingsReplyModeRoute = require('../reply-mode').default;
+    render(<SettingsReplyModeRoute />);
 
-    fireEvent.changeText(screen.getByTestId('settings-persona-new-role-name-input'), '华生');
-    fireEvent.changeText(
-      screen.getByTestId('settings-persona-new-role-prompt-input'),
-      '你是华生，请用伙伴视角回答。',
-    );
-    fireEvent.press(screen.getByTestId('settings-persona-add-role-button'));
-    fireEvent.press(screen.getByTestId('settings-persona-save'));
+    fireEvent.press(screen.getByText('自定义 LLM'));
+    fireEvent.press(screen.getByText('强制流式'));
+    fireEvent.press(screen.getByTestId('settings-reply-mode-save'));
 
     await waitFor(() => {
-      expect(mockSaveRuntimeConfig).toHaveBeenCalledTimes(1);
+      expect(mockSaveRuntimeConfig).toHaveBeenCalledWith({
+        replyChainMode: 'custom_llm',
+        replyStreamMode: 'force_stream',
+      });
     });
-    const payload = mockSaveRuntimeConfig.mock.calls[0][0];
-    expect(payload.persona.source).toBe('custom');
-    expect(payload.persona.systemPrompt).toBe('你是华生，请用伙伴视角回答。');
-    expect(payload.persona.activeRoleId).toContain('persona-custom-');
-    expect(payload.persona.roles.some((role: { name: string }) => role.name === '华生')).toBe(true);
+    expect(mockShowToast).toHaveBeenCalledWith('saved', 'success');
   });
 });

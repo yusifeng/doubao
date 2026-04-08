@@ -37,6 +37,7 @@ describe('runtimeConfigRepo', () => {
     process.env = {
       ...originalEnv,
       EXPO_PUBLIC_REPLY_CHAIN_MODE: 'official_s2s',
+      EXPO_PUBLIC_REPLY_STREAM_MODE: 'auto',
       EXPO_PUBLIC_S2S_APP_ID: 'env-app-id',
       EXPO_PUBLIC_S2S_ACCESS_TOKEN: 'env-access-token',
       EXPO_PUBLIC_S2S_APP_KEY: 'env-app-key',
@@ -65,6 +66,7 @@ describe('runtimeConfigRepo', () => {
     mockAsyncStorage.getItem.mockResolvedValue(
       JSON.stringify({
         replyChainMode: 'custom_llm',
+        replyStreamMode: 'force_non_stream',
         llm: {
           baseUrl: 'https://stored.llm/v1',
           model: 'stored-model',
@@ -96,6 +98,7 @@ describe('runtimeConfigRepo', () => {
     const config = await getEffectiveRuntimeConfig();
 
     expect(config.replyChainMode).toBe('custom_llm');
+    expect(config.replyStreamMode).toBe('force_non_stream');
     expect(config.llm).toEqual({
       baseUrl: 'https://stored.llm/v1',
       apiKey: 'stored-llm-api-key',
@@ -158,6 +161,7 @@ describe('runtimeConfigRepo', () => {
 
     expect(mockAsyncStorage.setItem).toHaveBeenCalledTimes(1);
     const storedPayload = JSON.parse(mockAsyncStorage.setItem.mock.calls[0][1]);
+    expect(storedPayload.replyStreamMode).toBe('auto');
     expect(storedPayload.llm.apiKey).toBeUndefined();
     expect(storedPayload.s2s.accessToken).toBeUndefined();
     expect(storedPayload.persona.activeRoleId).toBeTruthy();
