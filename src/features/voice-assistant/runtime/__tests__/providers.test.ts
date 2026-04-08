@@ -41,6 +41,7 @@ describe('createVoiceAssistantProviders platform routing', () => {
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
+    delete process.env.EXPO_PUBLIC_DEBUG_LOG_SINK_URL;
     global.WebSocket = originalWebSocket;
     jest.resetModules();
     jest.clearAllMocks();
@@ -101,6 +102,30 @@ describe('createVoiceAssistantProviders platform routing', () => {
       expect(providers.dialogEngine.isSupported()).toBe(true);
       expect(providers.s2s.constructor.name).toBe('MockS2SProvider');
       expect(providers.audio.constructor.name).toBe('MockAudioProvider');
+    });
+  });
+
+  it('enables remote log fanout providers when collector url is configured', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.EXPO_PUBLIC_DEBUG_LOG_SINK_URL = 'http://127.0.0.1:7357/ingest';
+    global.WebSocket = function MockWebSocket() {} as unknown as typeof WebSocket;
+    jest.doMock('../../../../core/providers/audio/expoRealtime', () => ({
+      ExpoRealtimeAudioProvider: class ExpoRealtimeAudioProvider {},
+    }));
+
+    jest.isolateModules(() => {
+      const reactNative = require('react-native');
+      Object.defineProperty(reactNative.Platform, 'OS', {
+        configurable: true,
+        value: 'android',
+      });
+      delete reactNative.NativeModules.RNDialogEngine;
+
+      const { createVoiceAssistantProviders } = require('../providers');
+      const providers = createVoiceAssistantProviders(runtimeConfig);
+
+      expect(providers.observability.constructor.name).toBe('CompositeObservabilityProvider');
+      expect(providers.audit.constructor.name).toBe('CompositeAuditProvider');
     });
   });
 });

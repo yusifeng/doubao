@@ -4,6 +4,12 @@ import { buildDialogLogContextPayload, mergeTraceSeedFromEvent, upsertTurnTrace 
 import type { RealtimeCallPhase, RealtimeListeningState, TurnTraceContext } from './useTextChat.shared';
 
 export function createRuntimeStateHandlers(deps: any) {
+  const setRuntimeStatus = (
+    status: 'idle' | 'listening' | 'thinking' | 'speaking' | 'error',
+  ) => {
+    deps.setRuntimeStatus(status);
+  };
+
   const markConversationSelectionEpoch = () => {
     deps.conversationSelectionEpochRef.current += 1;
     return deps.conversationSelectionEpochRef.current;
@@ -115,7 +121,7 @@ export function createRuntimeStateHandlers(deps: any) {
       }
       deps.setLiveUserTranscript('');
       deps.setPendingAssistantReply('');
-      deps.machine.toIdle();
+      setRuntimeStatus('idle');
       if (nextConversationId) {
         await deps.repo.updateConversationStatus(nextConversationId, 'idle');
       }
@@ -233,25 +239,7 @@ export function createRuntimeStateHandlers(deps: any) {
     status: 'idle' | 'listening' | 'thinking' | 'speaking' | 'error',
     options?: { refreshConversations?: boolean; conversationId?: string | null },
   ) => {
-    switch (status) {
-      case 'idle':
-        deps.machine.toIdle();
-        break;
-      case 'listening':
-        deps.machine.toListening();
-        break;
-      case 'thinking':
-        deps.machine.toThinking();
-        break;
-      case 'speaking':
-        deps.machine.toSpeaking();
-        break;
-      case 'error':
-        deps.machine.toError();
-        break;
-      default:
-        break;
-    }
+    setRuntimeStatus(status);
     const targetConversationId = options?.conversationId ?? deps.activeConversationId;
     if (targetConversationId) {
       await deps.repo.updateConversationStatus(targetConversationId, status);

@@ -246,6 +246,51 @@ adb logcat | rg "NativeWind verifyInstallation|verifyInstallation failed|ReactNa
 adb logcat -d | rg "voice-assistant|s2s|NativeWind verifyInstallation" | tail -n 120
 ```
 
+### 6.5 远程日志采集（推荐，免 ADB 翻日志）
+
+目标：让手机把结构化日志（含 `traceId/sessionId/turnId`）直接发到你电脑，落地为文件，后续可直接在仓库里分析。
+
+1. 在电脑启动采集器：
+
+```bash
+cd /Users/david/Documents/github/my-doubao2
+pnpm run log:collector
+```
+
+启动后会打印局域网地址，例如：
+
+```text
+[collector] phone endpoint: http://192.168.1.23:7357/ingest
+```
+
+2. 在 `.env` 里配置手机上报地址（使用你电脑的局域网 IP）：
+
+```bash
+EXPO_PUBLIC_DEBUG_LOG_SINK_URL=http://192.168.1.23:7357/ingest
+EXPO_PUBLIC_DEBUG_DEVICE_LABEL=david-android
+EXPO_PUBLIC_DEBUG_LOG_BATCH_SIZE=20
+EXPO_PUBLIC_DEBUG_LOG_FLUSH_MS=800
+EXPO_PUBLIC_DEBUG_LOG_MAX_QUEUE=2000
+```
+
+3. 重启 Metro + App 后生效。采集文件默认在：
+
+```text
+logs/voice-assistant-remote.ndjson
+```
+
+4. 常用查看命令：
+
+```bash
+tail -f logs/voice-assistant-remote.ndjson
+```
+
+按 traceId 过滤：
+
+```bash
+rg "\"traceId\":\"va-" logs/voice-assistant-remote.ndjson
+```
+
 ---
 
 ## 7. 语音调试时应该怎么操作

@@ -24,9 +24,9 @@
 
 ### Phase 2: Runtime Store Introduction
 
-- [ ] 引入 store lib（Zustand），仅托管 runtime 编排态
+- [x] 引入 store lib（Zustand），仅托管 runtime 编排态
 - [ ] 清理 `useTextChat` 业务态 `ref`，保留副作用句柄型 `ref`
-- [ ] 将会话状态迁移为 reducer/store 单一路径写入
+- [x] 将会话状态迁移为 reducer/store 单一路径写入
 
 ### Phase 3: Debt Cleanup + UX Regression Fixes
 

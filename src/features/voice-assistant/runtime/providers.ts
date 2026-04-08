@@ -1,19 +1,25 @@
 import { Platform } from 'react-native';
+import { CompositeAuditProvider } from '../../../core/providers/audit/composite';
 import { MockAudioProvider } from '../../../core/providers/audio/mock';
 import type { AudioProvider } from '../../../core/providers/audio/types';
 import { ConsoleAuditProvider } from '../../../core/providers/audit/console';
+import { RemoteHttpAuditProvider } from '../../../core/providers/audit/remoteHttp';
 import type { AuditProvider } from '../../../core/providers/audit/types';
 import { AndroidDialogEngineProvider } from '../../../core/providers/dialog-engine/android';
 import { MockDialogEngineProvider } from '../../../core/providers/dialog-engine/mock';
 import type { DialogEngineProvider } from '../../../core/providers/dialog-engine/types';
+import { CompositeObservabilityProvider } from '../../../core/providers/observability/composite';
 import { ConsoleObservabilityProvider } from '../../../core/providers/observability/console';
+import { RemoteHttpObservabilityProvider } from '../../../core/providers/observability/remoteHttp';
 import type { ObservabilityProvider } from '../../../core/providers/observability/types';
 import { OpenAICompatibleReplyProvider } from '../../../core/providers/reply/openaiCompatible';
 import type { ReplyProvider } from '../../../core/providers/reply/types';
 import { MockS2SProvider } from '../../../core/providers/s2s/mock';
 import type { S2SProvider } from '../../../core/providers/s2s/types';
+import { HttpEventSink } from '../../../core/providers/telemetry/httpEventSink';
 import { WebSocketS2SProvider } from '../../../core/providers/s2s/websocket';
 import { isCompleteLLMConfig, isCompleteS2SConfig, type RuntimeConfig } from '../config/runtimeConfig';
+import { readRemoteLogCollectorEnv } from '../config/env';
 import { LocalReplyProvider } from '../service/localReplyProvider';
 
 export type VoiceAssistantProviders = {
@@ -76,12 +82,37 @@ export function createVoiceAssistantProviders(runtimeConfig: RuntimeConfig): Voi
           streamMode: runtimeConfig.replyStreamMode,
         })
       : new LocalReplyProvider();
+  const remoteLogConfig = process.env.NODE_ENV === 'test' ? null : readRemoteLogCollectorEnv();
+  const remoteSink = remoteLogConfig
+    ? new HttpEventSink({
+        endpointUrl: remoteLogConfig.endpointUrl,
+        authToken: remoteLogConfig.authToken,
+        batchSize: remoteLogConfig.batchSize,
+        flushIntervalMs: remoteLogConfig.flushIntervalMs,
+        maxQueueSize: remoteLogConfig.maxQueueSize,
+        sourceApp: 'my-doubao2',
+        sourceEnv: process.env.NODE_ENV ?? 'development',
+        deviceLabel: remoteLogConfig.deviceLabel,
+      })
+    : null;
+  const observabilityProvider: ObservabilityProvider = remoteSink
+    ? new CompositeObservabilityProvider([
+        new ConsoleObservabilityProvider(),
+        new RemoteHttpObservabilityProvider(remoteSink),
+      ])
+    : new ConsoleObservabilityProvider();
+  const auditProvider: AuditProvider = remoteSink
+    ? new CompositeAuditProvider([
+        new ConsoleAuditProvider(),
+        new RemoteHttpAuditProvider(remoteSink),
+      ])
+    : new ConsoleAuditProvider();
   return {
     audio: audioProvider,
     s2s: s2sProvider,
     dialogEngine,
     reply: replyProvider,
-    observability: new ConsoleObservabilityProvider(),
-    audit: new ConsoleAuditProvider(),
+    observability: observabilityProvider,
+    audit: auditProvider,
   };
 }

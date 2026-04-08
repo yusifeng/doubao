@@ -1136,3 +1136,46 @@
   - `FlatList` virtualization behavior can differ from previous `ScrollView` rendering on very short/very long histories.
 - Rollback:
   - Revert the scoped runtime/UI files above to restore non-throttled pending rendering, previous `ScrollView` list behavior, and pre-fix draft finalization flow.
+
+## 2026-04-09 02:22 (CST) - refactor(voice-chat): add runtime store and remote log fanout
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `AGENTS.md`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `docs/references/expo-android-debug-runbook.md`
+  - `package.json`
+  - `pnpm-lock.yaml`
+  - `scripts/voice-log-collector.mjs`
+  - `src/core/providers/audit/composite.ts`
+  - `src/core/providers/audit/remoteHttp.ts`
+  - `src/core/providers/observability/composite.ts`
+  - `src/core/providers/observability/remoteHttp.ts`
+  - `src/core/providers/telemetry/httpEventSink.ts`
+  - `src/core/providers/telemetry/__tests__/httpEventSink.test.ts`
+  - `src/features/voice-assistant/config/env.ts`
+  - `src/features/voice-assistant/config/__tests__/env.remoteLog.test.ts`
+  - `src/features/voice-assistant/runtime/providers.ts`
+  - `src/features/voice-assistant/runtime/__tests__/providers.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeStore.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeStore.test.ts`
+  - `src/features/voice-assistant/runtime/sessionMachine.ts` (deleted)
+- Summary:
+  - Added remote log fanout capability for telemetry, observability, and audit paths; when remote logging env is enabled, runtime now writes to both local sinks and HTTP collector endpoint.
+  - Added `scripts/voice-log-collector.mjs` and documented the desktop log-collection workflow in runbook and `AGENTS.md`, so debugging no longer depends on ADB-only device log inspection.
+  - Introduced `useTextChat.runtimeStore` (Zustand) as the shared runtime status/store layer and migrated `useTextChat.internal` + runtime-state handlers onto store actions.
+  - Removed legacy `sessionMachine.ts` path and updated related tests/plan docs to reflect the Phase 2 runtime store migration.
+  - Extended env parsing and provider tests to cover remote log config and provider fanout behavior.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/config/__tests__/env.remoteLog.test.ts src/features/voice-assistant/runtime/__tests__/providers.test.ts src/core/providers/telemetry/__tests__/httpEventSink.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeStore.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts` (pass)
+- Risk:
+  - Remote log fanout introduces an external HTTP dependency; collector不可达时会退化为本地日志可用，但远程调试可观测性会下降。
+  - Runtime status state-source从本地 machine/ref 切到 store 后，若存在未迁移读写路径，可能出现状态可见性不一致。
+- Rollback:
+  - Revert the files above to restore prior single-sink logging and pre-store runtime state flow.

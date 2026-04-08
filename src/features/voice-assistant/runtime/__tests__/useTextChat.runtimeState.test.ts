@@ -56,13 +56,7 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
     const deps: any = {
       activeConversationId,
       repo,
-      machine: {
-        toIdle: jest.fn(),
-        toListening: jest.fn(),
-        toThinking: jest.fn(),
-        toSpeaking: jest.fn(),
-        toError: jest.fn(),
-      },
+      setRuntimeStatus: jest.fn(),
       setActiveConversationId: jest.fn((nextId: string | null) => {
         activeConversationId = nextId;
         deps.activeConversationId = nextId;
@@ -129,13 +123,7 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
     const deps: any = {
       activeConversationId,
       repo,
-      machine: {
-        toIdle: jest.fn(),
-        toListening: jest.fn(),
-        toThinking: jest.fn(),
-        toSpeaking: jest.fn(),
-        toError: jest.fn(),
-      },
+      setRuntimeStatus: jest.fn(),
       setActiveConversationId: jest.fn((nextId: string | null) => {
         activeConversationId = nextId;
         deps.activeConversationId = nextId;

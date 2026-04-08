@@ -47,6 +47,7 @@
 - `pnpm run android`
 - `pnpm run ios`
 - `pnpm run web`
+- `pnpm run log:collector`（启动本机远程日志采集器，手机可直传结构化日志到电脑）
 - `pnpm run test`
 - `pnpm run test:coverage`
 
@@ -63,6 +64,7 @@
 - 设计文档：`docs/design-docs/`
 - 产品规格：`docs/product-specs/`
 - 参考资料：`docs/references/`
+- Android 调试与远程日志采集：`docs/references/expo-android-debug-runbook.md`（见 6.5「远程日志采集」）
 
 ## 不确定时
 

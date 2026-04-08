@@ -14,6 +14,22 @@ export type LLMEnvConfig = {
 export type VoicePipelineMode = 'asr_text' | 'realtime_audio';
 export type ReplyChainMode = 'official_s2s' | 'custom_llm';
 export type ReplyStreamMode = 'auto' | 'force_stream' | 'force_non_stream';
+export type RemoteLogCollectorEnvConfig = {
+  endpointUrl: string;
+  authToken?: string;
+  batchSize: number;
+  flushIntervalMs: number;
+  maxQueueSize: number;
+  deviceLabel: string;
+};
+
+function readPositiveIntegerEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value?.trim() ?? '');
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
 
 export function readS2SEnv(): S2SEnvConfig | null {
   const appId = process.env.EXPO_PUBLIC_S2S_APP_ID?.trim() ?? '';
@@ -68,4 +84,33 @@ export function readReplyStreamMode(): ReplyStreamMode {
     return 'force_non_stream';
   }
   return 'auto';
+}
+
+export function readRemoteLogCollectorEnv(): RemoteLogCollectorEnvConfig | null {
+  const endpointUrl = process.env.EXPO_PUBLIC_DEBUG_LOG_SINK_URL?.trim() ?? '';
+  if (!endpointUrl) {
+    return null;
+  }
+  if (typeof URL === 'function') {
+    try {
+      const parsed = new URL(endpointUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  } else if (!endpointUrl.startsWith('http://') && !endpointUrl.startsWith('https://')) {
+    return null;
+  }
+  const authToken = process.env.EXPO_PUBLIC_DEBUG_LOG_SINK_TOKEN?.trim() ?? '';
+  const deviceLabel = process.env.EXPO_PUBLIC_DEBUG_DEVICE_LABEL?.trim() ?? '';
+  return {
+    endpointUrl,
+    authToken: authToken || undefined,
+    batchSize: readPositiveIntegerEnv(process.env.EXPO_PUBLIC_DEBUG_LOG_BATCH_SIZE, 20),
+    flushIntervalMs: readPositiveIntegerEnv(process.env.EXPO_PUBLIC_DEBUG_LOG_FLUSH_MS, 800),
+    maxQueueSize: readPositiveIntegerEnv(process.env.EXPO_PUBLIC_DEBUG_LOG_MAX_QUEUE, 2000),
+    deviceLabel: deviceLabel || 'mobile-device',
+  };
 }

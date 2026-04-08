@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
+import { useStore } from 'zustand';
 import type { Conversation, Message } from '../types/model';
 import { InMemoryConversationRepo } from '../repo/conversationRepo';
 import { PersistentConversationRepo } from '../repo/persistentConversationRepo';
@@ -16,7 +17,6 @@ import {
   type RuntimeS2SConfig,
 } from '../config/runtimeConfig';
 import { createVoiceAssistantProviders } from './providers';
-import { useSessionMachine } from './sessionMachine';
 import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
 import {
   VOICE_ASSISTANT_DIALOG_BOT_NAME,
@@ -46,6 +46,7 @@ import { createAndroidDialogRuntimeHandlers } from './useTextChat.androidDialogR
 import { createHandsFreeVoiceLoopHandlers } from './useTextChat.handsFreeVoiceLoop';
 import { createRealtimeS2SDemoHandlers } from './useTextChat.realtimeS2SDemo';
 import { createRuntimeStateHandlers } from './useTextChat.runtimeState';
+import { createVoiceAssistantRuntimeStore } from './useTextChat.runtimeStore';
 import { createTextPipelineHandlers } from './useTextChat.textPipeline';
 import { createVoiceToggleHandlers } from './useTextChat.voiceToggle';
 import {
@@ -117,8 +118,41 @@ export function useTextChat(): UseTextChatResult {
     () => (isTestEnv ? new InMemoryConversationRepo() : new PersistentConversationRepo()),
     [isTestEnv],
   );
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>(() => readRuntimeConfigFromEnv());
-  const [runtimeConfigHydrated, setRuntimeConfigHydrated] = useState(false);
+  const runtimeStoreRef = useRef<ReturnType<typeof createVoiceAssistantRuntimeStore> | null>(null);
+  if (!runtimeStoreRef.current) {
+    runtimeStoreRef.current = createVoiceAssistantRuntimeStore(readRuntimeConfigFromEnv());
+  }
+  const runtimeStore = runtimeStoreRef.current;
+  const runtimeStatus = useStore(runtimeStore, (state) => state.runtimeStatus);
+  const runtimeConfig = useStore(runtimeStore, (state) => state.runtimeConfig);
+  const runtimeConfigHydrated = useStore(runtimeStore, (state) => state.runtimeConfigHydrated);
+  const conversations = useStore(runtimeStore, (state) => state.conversations);
+  const activeConversationId = useStore(runtimeStore, (state) => state.activeConversationId);
+  const messages = useStore(runtimeStore, (state) => state.messages);
+  const isVoiceActive = useStore(runtimeStore, (state) => state.isVoiceActive);
+  const isVoiceInputMuted = useStore(runtimeStore, (state) => state.isVoiceInputMuted);
+  const realtimeCallPhase = useStore(runtimeStore, (state) => state.realtimeCallPhase);
+  const realtimeListeningState = useStore(runtimeStore, (state) => state.realtimeListeningState);
+  const liveUserTranscript = useStore(runtimeStore, (state) => state.liveUserTranscript);
+  const pendingAssistantReply = useStore(runtimeStore, (state) => state.pendingAssistantReply);
+  const connectivityHint = useStore(runtimeStore, (state) => state.connectivityHint);
+  const voiceDebugLastEvent = useStore(runtimeStore, (state) => state.voiceDebugLastEvent);
+  const s2sSessionReady = useStore(runtimeStore, (state) => state.s2sSessionReady);
+  const setRuntimeStatus = useStore(runtimeStore, (state) => state.setRuntimeStatus);
+  const setRuntimeConfig = useStore(runtimeStore, (state) => state.setRuntimeConfig);
+  const setRuntimeConfigHydrated = useStore(runtimeStore, (state) => state.setRuntimeConfigHydrated);
+  const setConversations = useStore(runtimeStore, (state) => state.setConversations);
+  const setActiveConversationId = useStore(runtimeStore, (state) => state.setActiveConversationId);
+  const setMessages = useStore(runtimeStore, (state) => state.setMessages);
+  const setIsVoiceActive = useStore(runtimeStore, (state) => state.setIsVoiceActive);
+  const setIsVoiceInputMuted = useStore(runtimeStore, (state) => state.setIsVoiceInputMuted);
+  const setRealtimeCallPhase = useStore(runtimeStore, (state) => state.setRealtimeCallPhase);
+  const setRealtimeListeningState = useStore(runtimeStore, (state) => state.setRealtimeListeningState);
+  const setLiveUserTranscript = useStore(runtimeStore, (state) => state.setLiveUserTranscript);
+  const setPendingAssistantReply = useStore(runtimeStore, (state) => state.setPendingAssistantReply);
+  const setConnectivityHint = useStore(runtimeStore, (state) => state.setConnectivityHint);
+  const setVoiceDebugLastEvent = useStore(runtimeStore, (state) => state.setVoiceDebugLastEvent);
+  const setS2SSessionReady = useStore(runtimeStore, (state) => state.setS2SSessionReady);
   const runtimeConfigRef = useRef(runtimeConfig);
   const runtimeConfigHydratedRef = useRef(runtimeConfigHydrated);
   const providers = useMemo(() => createVoiceAssistantProviders(runtimeConfig), [runtimeConfig]);
@@ -126,7 +160,6 @@ export function useTextChat(): UseTextChatResult {
     () => new SessionController(providers.dialogEngine),
     [providers.dialogEngine],
   );
-  const machine = useSessionMachine();
   const isAndroidDialogMode = Platform.OS === 'android' && providers.dialogEngine.isSupported();
   const replyChainMode = runtimeConfig.replyChainMode;
   const llmConfig = runtimeConfig.llm;
@@ -196,22 +229,10 @@ export function useTextChat(): UseTextChatResult {
   const orchestratorStateRef = useRef(createInitialDialogOrchestratorState());
   const dialogSessionEpochRef = useRef(0);
   const turnTraceRef = useRef<TurnTraceContext | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [isVoiceInputMuted, setIsVoiceInputMuted] = useState(false);
   const isVoiceInputMutedRef = useRef(false);
-  const [realtimeCallPhase, setRealtimeCallPhase] = useState<RealtimeCallPhase>('idle');
-  const [realtimeListeningState, setRealtimeListeningState] = useState<RealtimeListeningState>('ready');
-  const [liveUserTranscript, setLiveUserTranscript] = useState('');
-  const [pendingAssistantReply, setPendingAssistantReply] = useState('');
   const pendingAssistantReplyRef = useRef(pendingAssistantReply);
   const pendingAssistantReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAssistantReplyLastCommitAtRef = useRef(0);
-  const [connectivityHint, setConnectivityHint] = useState('尚未测试连接');
-  const [voiceDebugLastEvent, setVoiceDebugLastEvent] = useState('none');
-  const [s2sSessionReady, setS2SSessionReady] = useState(false);
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
   const conversationSelectionEpochRef = useRef(0);
 
@@ -301,7 +322,7 @@ export function useTextChat(): UseTextChatResult {
         activeConversationId,
         repo,
         providers,
-        machine,
+        setRuntimeStatus,
         runtimeConfigRef,
         runtimeConfigHydratedRef,
         getEffectiveRuntimeConfig,
@@ -361,7 +382,7 @@ export function useTextChat(): UseTextChatResult {
         androidReplyGenerationRef,
         conversationSelectionEpochRef,
       }),
-    [activeConversationId, androidDialogWorkMode, machine, providers, replyChainMode, repo, s2sSessionReady],
+    [activeConversationId, androidDialogWorkMode, providers, replyChainMode, repo, s2sSessionReady, setRuntimeStatus],
   );
 
   const syncConversationState = useCallback(() => runtimeStateHandlers.syncConversationState(), [runtimeStateHandlers]);
@@ -393,7 +414,9 @@ export function useTextChat(): UseTextChatResult {
 
   useEffect(
     () => () => {
-      resetRealtimeCallStateRef.current();
+      if (!isTestEnv) {
+        resetRealtimeCallStateRef.current();
+      }
       androidReplyGenerationRef.current += 1;
       void providers.audio.stopCapture();
       void providers.audio.stopPlayback();
@@ -401,7 +424,7 @@ export function useTextChat(): UseTextChatResult {
       void providers.s2s.disconnect();
       void androidSessionController.destroy();
     },
-    [androidSessionController, providers.audio, providers.s2s],
+    [androidSessionController, isTestEnv, providers.audio, providers.s2s],
   );
 
   const ensureS2SSession = useCallback(() => runtimeStateHandlers.ensureS2SSession(), [runtimeStateHandlers]);
@@ -1022,7 +1045,7 @@ export function useTextChat(): UseTextChatResult {
   const voiceRuntimeHint = voiceToggleHandlers.voiceRuntimeHint;
 
   return {
-    status: machine.status,
+    status: runtimeStatus,
     voiceCallPhase: realtimeCallPhase,
     conversations,
     activeConversationId,
