@@ -1,226 +1,135 @@
 import type { Conversation, Message } from '../types/model';
 import type { ConversationRepo } from './conversationRepo';
+import { AsyncStorageConversationRepo } from './asyncStorageConversationRepo';
+import { generateUuidV7Like } from './sqlite/id';
+import { SqliteVoiceAssistantStorageRepo } from './sqlite/sqliteVoiceAssistantStorageRepo';
+import { isVoiceAssistantSqliteAvailable } from './sqlite/client';
 
-const STORAGE_KEY = 'voice_assistant.conversation_repo.v1';
-
-type StoredConversationState = {
-  conversations: Conversation[];
-  messagesByConversation: Record<string, Message[]>;
-  idSeed: number;
-};
-
-type AsyncStorageLike = {
-  getItem: (key: string) => Promise<string | null>;
-  setItem: (key: string, value: string) => Promise<void>;
-};
-
-function resolveAsyncStorage(): AsyncStorageLike | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const module = require('@react-native-async-storage/async-storage');
-    const candidate: AsyncStorageLike | undefined = module?.default ?? module;
-    if (
-      candidate &&
-      typeof candidate.getItem === 'function' &&
-      typeof candidate.setItem === 'function'
-    ) {
-      return candidate;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function createEmptyState(): StoredConversationState {
+function toConversation(session: {
+  id: string;
+  title: string;
+  status: Conversation['status'];
+  systemPromptSnapshot: string | null;
+  lastMessagePreview: string;
+  updatedAt: number;
+}): Conversation {
   return {
-    conversations: [],
-    messagesByConversation: {},
-    idSeed: 0,
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    systemPromptSnapshot: session.systemPromptSnapshot ?? undefined,
+    lastMessage: session.lastMessagePreview,
+    updatedAt: session.updatedAt,
   };
 }
 
-function isStoredConversationState(input: unknown): input is StoredConversationState {
-  if (!input || typeof input !== 'object') {
-    return false;
-  }
-  const candidate = input as Partial<StoredConversationState>;
-  return (
-    Array.isArray(candidate.conversations) &&
-    typeof candidate.messagesByConversation === 'object' &&
-    candidate.messagesByConversation !== null &&
-    typeof candidate.idSeed === 'number'
-  );
+function toMessage(message: {
+  id: string;
+  sessionId: string;
+  role: Message['role'];
+  type: Message['type'];
+  content: string;
+  createdAt: number;
+}): Message {
+  return {
+    id: message.id,
+    conversationId: message.sessionId,
+    role: message.role,
+    type: message.type,
+    content: message.content,
+    createdAt: message.createdAt,
+  };
 }
 
 export class PersistentConversationRepo implements ConversationRepo {
-  private state: StoredConversationState = createEmptyState();
+  private storage = new SqliteVoiceAssistantStorageRepo();
+  private asyncStorageFallback = new AsyncStorageConversationRepo();
 
-  private hydrated = false;
-
-  private asyncStorage = resolveAsyncStorage();
-
-  private async hydrateIfNeeded() {
-    if (this.hydrated) {
-      return;
-    }
-    try {
-      if (!this.asyncStorage) {
-        this.hydrated = true;
-        return;
-      }
-      const raw = await this.asyncStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        this.hydrated = true;
-        return;
-      }
-      const parsed: unknown = JSON.parse(raw);
-      if (!isStoredConversationState(parsed)) {
-        this.state = createEmptyState();
-        this.hydrated = true;
-        return;
-      }
-      this.state = {
-        conversations: this.sortConversations(parsed.conversations),
-        messagesByConversation: parsed.messagesByConversation,
-        idSeed: parsed.idSeed,
-      };
-    } catch {
-      this.state = createEmptyState();
-    } finally {
-      this.hydrated = true;
-    }
-  }
-
-  private async persistState() {
-    if (!this.asyncStorage) {
-      return;
-    }
-    await this.asyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
-  }
-
-  private nextId(prefix: string): string {
-    this.state.idSeed += 1;
-    return `${prefix}-${this.state.idSeed}`;
-  }
-
-  private sortConversations(conversations: Conversation[]): Conversation[] {
-    return [...conversations].sort((left, right) => right.updatedAt - left.updatedAt);
+  private useAsyncStorageFallback(): boolean {
+    return !isVoiceAssistantSqliteAvailable();
   }
 
   async createConversation(title = '新会话', options?: { systemPromptSnapshot?: string }): Promise<Conversation> {
-    await this.hydrateIfNeeded();
-    const now = Date.now();
-    const conversation: Conversation = {
-      id: this.nextId('conv'),
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.createConversation(title, options);
+    }
+    const created = await this.storage.create({
+      id: generateUuidV7Like(),
       title,
-      lastMessage: '',
-      updatedAt: now,
       status: 'idle',
-      systemPromptSnapshot: options?.systemPromptSnapshot,
-    };
-    this.state.conversations = this.sortConversations([conversation, ...this.state.conversations]);
-    this.state.messagesByConversation[conversation.id] = [];
-    await this.persistState();
-    return conversation;
+      systemPromptSnapshot: options?.systemPromptSnapshot ?? null,
+      createdAt: Date.now(),
+    });
+    return toConversation(created);
   }
 
   async listConversations(): Promise<Conversation[]> {
-    await this.hydrateIfNeeded();
-    return this.sortConversations(this.state.conversations);
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.listConversations();
+    }
+    const sessions = await this.storage.list();
+    return sessions.map(toConversation);
   }
 
   async appendMessage(
     conversationId: string,
     message: Omit<Message, 'id' | 'createdAt'>,
   ): Promise<Message> {
-    await this.hydrateIfNeeded();
-    const nextMessage: Message = {
-      ...message,
-      id: this.nextId('msg'),
-      createdAt: Date.now(),
-    };
-    const current = this.state.messagesByConversation[conversationId] ?? [];
-    this.state.messagesByConversation[conversationId] = [...current, nextMessage];
-
-    this.state.conversations = this.state.conversations.map((conversation) =>
-      conversation.id === conversationId
-        ? {
-            ...conversation,
-            lastMessage: nextMessage.content,
-            updatedAt: nextMessage.createdAt,
-          }
-        : conversation,
-    );
-    this.state.conversations = this.sortConversations(this.state.conversations);
-    await this.persistState();
-    return nextMessage;
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.appendMessage(conversationId, message);
+    }
+    const createdAt = Date.now();
+    const inserted = await this.storage.append({
+      id: generateUuidV7Like(),
+      sessionId: conversationId,
+      role: message.role,
+      type: message.type,
+      content: message.content,
+      createdAt,
+      streamState: 'final',
+    });
+    return toMessage(inserted);
   }
 
   async listMessages(conversationId: string): Promise<Message[]> {
-    await this.hydrateIfNeeded();
-    return this.state.messagesByConversation[conversationId] ?? [];
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.listMessages(conversationId);
+    }
+    const rows = await this.storage.listBySession(conversationId);
+    return rows.map(toMessage);
   }
 
   async renameConversationTitle(conversationId: string, title: string): Promise<boolean> {
-    await this.hydrateIfNeeded();
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.renameConversationTitle(conversationId, title);
+    }
     const normalized = title.trim();
     if (!normalized) {
       return false;
     }
-    const now = Date.now();
-    let updated = false;
-    this.state.conversations = this.state.conversations.map((conversation) => {
-      if (conversation.id !== conversationId) {
-        return conversation;
-      }
-      updated = true;
-      return {
-        ...conversation,
-        title: normalized,
-        updatedAt: now,
-      };
-    });
-    if (!updated) {
-      return false;
-    }
-    this.state.conversations = this.sortConversations(this.state.conversations);
-    await this.persistState();
-    return true;
+    return this.storage.renameTitle(conversationId, normalized, Date.now());
   }
 
   async deleteConversation(conversationId: string): Promise<boolean> {
-    await this.hydrateIfNeeded();
-    const previousLength = this.state.conversations.length;
-    this.state.conversations = this.state.conversations.filter((conversation) => conversation.id !== conversationId);
-    delete this.state.messagesByConversation[conversationId];
-    const deleted = this.state.conversations.length < previousLength;
-    if (!deleted) {
-      return false;
+    if (this.useAsyncStorageFallback()) {
+      return this.asyncStorageFallback.deleteConversation(conversationId);
     }
-    await this.persistState();
-    return true;
+    return this.storage.delete(conversationId);
   }
 
   async updateConversationStatus(conversationId: string, status: Conversation['status']): Promise<void> {
-    await this.hydrateIfNeeded();
-    this.state.conversations = this.state.conversations.map((conversation) =>
-      conversation.id === conversationId ? { ...conversation, status } : conversation,
-    );
-    this.state.conversations = this.sortConversations(this.state.conversations);
-    await this.persistState();
+    if (this.useAsyncStorageFallback()) {
+      await this.asyncStorageFallback.updateConversationStatus(conversationId, status);
+      return;
+    }
+    await this.storage.updateStatus(conversationId, status, Date.now());
   }
 
   async updateConversationSystemPromptSnapshot(conversationId: string, snapshot: string): Promise<void> {
-    await this.hydrateIfNeeded();
-    this.state.conversations = this.state.conversations.map((conversation) =>
-      conversation.id === conversationId
-        ? {
-            ...conversation,
-            systemPromptSnapshot: snapshot,
-          }
-        : conversation,
-    );
-    await this.persistState();
+    if (this.useAsyncStorageFallback()) {
+      await this.asyncStorageFallback.updateConversationSystemPromptSnapshot(conversationId, snapshot);
+      return;
+    }
+    await this.storage.updateSystemPromptSnapshot(conversationId, snapshot);
   }
 }

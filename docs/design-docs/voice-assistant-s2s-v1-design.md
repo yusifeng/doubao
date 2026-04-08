@@ -58,15 +58,16 @@ UI(Screen/Component)
 
 ## 4.1 StorageProvider（本地存储）
 
-当前落地：会话与消息已使用 `ConversationRepo` + AsyncStorage 持久化（`voice_assistant.conversation_repo.v1`）。
+当前落地：会话与消息已切换为 `ConversationRepo` + SQLite（Drizzle）持久化（`voice_assistant.db`）。
 
-演进规划：当会话规模、检索和多维筛选需求提升后，迁移到 **SQLite**。
+迁移策略：旧 AsyncStorage 会话历史不迁移，按新 schema 空库初始化。
+兼容策略：在非 SQLite 可用运行时（如部分非原生环境）继续使用 AsyncStorage 兼容存储。
 
 原因：
 
-- AsyncStorage 与当前 RN/Expo 链路集成成本低，能快速覆盖“重启后恢复会话”的基础诉求；
-- `ConversationRepo` 已完成接口抽象，后续可无侵入替换底层存储实现；
-- SQLite 仍是中长期目标，用于分页、检索、归档与复杂查询。
+- 当前语音/聊天链路需要更强的一致性与可扩展查询能力；
+- SQLite 便于落地会话日志、幂等约束与后续查询扩展；
+- 通过保持 `ConversationRepo` 接口不变，runtime/ui 改动面可控。
 
 契约建议：
 
@@ -323,8 +324,8 @@ tap stop
 2. 先打通文本链路（最小可用）；
 3. 再接入语音识别（ASR）与 TTS 播放；
 4. 最后补齐会话持久化与错误恢复。
-   - 当前已补齐 AsyncStorage 持久化；
-   - 后续在需要复杂查询时迁移 SQLite。
+   - 当前已切换到 SQLite（Drizzle）；
+   - 继续围绕 schema 与 repo 契约收敛运行时复杂度。
 5. 在 UI 收敛阶段完成 token 化替换与一致性检查。
 
 ## 11. UI 同款对齐补充

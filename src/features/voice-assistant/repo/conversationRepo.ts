@@ -1,4 +1,5 @@
 import type { Conversation, Message } from '../types/model';
+import { generateUuidV7Like } from './sqlite/id';
 
 export interface ConversationRepo {
   createConversation(title?: string, options?: { systemPromptSnapshot?: string }): Promise<Conversation>;
@@ -11,13 +12,11 @@ export interface ConversationRepo {
   updateConversationSystemPromptSnapshot(conversationId: string, snapshot: string): Promise<void>;
 }
 
-// M1 skeleton: in-memory placeholder, will be replaced by SQLite provider in M5.
+// In-memory test repo: keeps deterministic behavior for unit tests.
 export class InMemoryConversationRepo implements ConversationRepo {
   private conversations: Conversation[] = [];
 
   private messagesByConversation: Record<string, Message[]> = {};
-
-  private idSeed = 0;
 
   async createConversation(title = '新会话', options?: { systemPromptSnapshot?: string }): Promise<Conversation> {
     const now = Date.now();
@@ -114,8 +113,8 @@ export class InMemoryConversationRepo implements ConversationRepo {
   }
 
   private nextId(prefix: string): string {
-    this.idSeed += 1;
-    return `${prefix}-${this.idSeed}`;
+    const uuid = generateUuidV7Like();
+    return prefix === 'conv' || prefix === 'msg' ? uuid : `${prefix}-${uuid}`;
   }
 
   private sortConversations(conversations: Conversation[]): Conversation[] {

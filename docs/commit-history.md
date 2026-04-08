@@ -26,6 +26,40 @@
 
 ## Entries
 
+## 2026-04-09 01:14 (Asia/Shanghai) - feat(storage): introduce sqlite foundation and repo split
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/features/voice-assistant/repo/sqlite/*`
+  - `src/features/voice-assistant/repo/persistentConversationRepo.ts`
+  - `src/features/voice-assistant/repo/asyncStorageConversationRepo.ts`
+  - `src/features/voice-assistant/repo/{sessionRepo.ts,messageRepo.ts,voiceSessionLogRepo.ts,conversationRepo.ts}`
+  - `src/features/voice-assistant/types/storage.ts`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `docs/PLANS.md`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+  - `docs/exec-plans/active/{plan-conversation-single-surface.md,plan-my-doubao2-migration.md}`
+  - `package.json`
+  - `pnpm-lock.yaml`
+- Summary:
+  - Added SQLite + Drizzle storage foundation with schema versioning and tables for chat sessions/messages, runtime config, and voice session logs.
+  - Split storage contracts into `SessionRepo` / `MessageRepo` / `VoiceSessionLogRepo` and implemented SQLite-backed repository.
+  - Switched `PersistentConversationRepo` to SQLite on supported runtimes, with AsyncStorage compatibility fallback on non-SQLite runtimes.
+  - Replaced incremental `conv-* / msg-*` IDs with UUIDv7-like IDs in conversation repositories.
+  - Fixed append race by making message insert + conversation preview update transactional, and stabilized same-millisecond ordering via `rowid` tiebreak.
+  - Synced active plan/design docs to reflect SQLite cutover and explicit “no historical AsyncStorage migration” decision.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts` (pass; includes existing React act warnings)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (executed; remaining “旧数据迁移”提醒为已确认产品决策)
+- Risk:
+  - On SQLite-supported runtimes, historical AsyncStorage conversations are intentionally not migrated and will not appear in the new SQLite store.
+  - `voice_session*` tables are currently foundation-only and not yet wired into runtime event writes.
+- Rollback:
+  - Revert the scoped storage/repo/doc/package files above to restore prior AsyncStorage-only persistent conversation behavior.
+
 ## 2026-04-08 17:33 (CST) - feat(official-s2s): stream partial text with mode controls
 
 - Commit: pending
