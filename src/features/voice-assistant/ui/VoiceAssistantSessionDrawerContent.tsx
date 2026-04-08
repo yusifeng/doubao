@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { voiceAssistantConversationThemeClass } from '../../../core/theme/mappers';
 import type { Conversation } from '../types/model';
 import type { UseTextChatResult } from '../runtime/useTextChat';
+import { SquarePen } from 'lucide-react-native';
 import { VoiceAssistantIcon } from './VoiceAssistantIcon';
 import { AppDialog } from '../../../shared/ui/AppDialog';
 
@@ -22,35 +23,6 @@ type VoiceAssistantSessionDrawerContentProps = {
   onDeleteConversation?: (conversationId: string) => Promise<void> | void;
   onOpenSettings: () => Promise<void> | void;
 };
-
-function formatConversationTime(updatedAt: number): string {
-  const date = new Date(updatedAt);
-  const now = new Date();
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-  }
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
-function ConversationAvatar({ isActive }: { isActive: boolean }) {
-  if (isActive) {
-    return (
-      <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#007AFF]/10">
-        <VoiceAssistantIcon name="chat" color="#007AFF" size={18} />
-      </View>
-    );
-  }
-
-  return (
-    <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#F4F5F6]">
-      <VoiceAssistantIcon name="chat" color="#9CA3AF" size={18} />
-    </View>
-  );
-}
 
 export function VoiceAssistantSessionDrawerContent({
   session,
@@ -115,20 +87,9 @@ export function VoiceAssistantSessionDrawerContent({
   return (
     <SafeAreaView edges={['top', 'bottom']} className="flex-1 bg-[#FDFDFD]">
       <View
-        className="flex-1 bg-[#FDFDFD] px-4 pb-6 pt-5"
+        className="flex-1 bg-[#FDFDFD] px-4 pb-6 pt-2"
         testID="conversation-drawer-content"
       >
-        <View className="mb-3 flex-row items-center justify-between px-1">
-          <Text className="text-[28px] font-semibold text-[#111827]">会话</Text>
-          <TouchableOpacity
-            className="h-10 w-10 items-center justify-center rounded-full"
-            onPress={onClose}
-            testID="conversation-close-drawer-button"
-          >
-            <VoiceAssistantIcon name="close" size={20} color="#111827" />
-          </TouchableOpacity>
-        </View>
-
         <View className={voiceAssistantConversationThemeClass.drawerSearchWrap}>
           <View
             className={voiceAssistantConversationThemeClass.drawerSearchInner}
@@ -148,11 +109,9 @@ export function VoiceAssistantSessionDrawerContent({
             onPress={() => void onCreateConversation()}
             testID="conversation-create-button"
           >
-            <VoiceAssistantIcon name="compose" size={20} color="#111827" />
+            <SquarePen size={20} color="#111827" strokeWidth={1.8} />
           </TouchableOpacity>
         </View>
-
-        <View className="h-3" />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -170,7 +129,7 @@ export function VoiceAssistantSessionDrawerContent({
               return (
                 <TouchableOpacity
                   key={conversation.id}
-                  className={`${voiceAssistantConversationThemeClass.drawerConversationRow} ${isActive ? 'bg-[#F1F6FF]' : 'bg-transparent'}`}
+                  className={`${voiceAssistantConversationThemeClass.drawerConversationRow} ${isActive ? 'bg-[#F2F3F5]' : 'bg-transparent'}`}
                   onPress={() => {
                     if (longPressedConversationIdRef.current === conversation.id) {
                       longPressedConversationIdRef.current = null;
@@ -190,7 +149,6 @@ export function VoiceAssistantSessionDrawerContent({
                       : `conversation-row-${conversation.id}`
                   }
                 >
-                  <ConversationAvatar isActive={isActive} />
                   <View
                     className={
                       voiceAssistantConversationThemeClass.drawerConversationBody
@@ -205,15 +163,6 @@ export function VoiceAssistantSessionDrawerContent({
                       {conversation.title}
                     </Text>
                   </View>
-                  <View className="items-end">
-                    <Text
-                      className={
-                        voiceAssistantConversationThemeClass.drawerConversationMeta
-                      }
-                    >
-                      {formatConversationTime(conversation.updatedAt)}
-                    </Text>
-                  </View>
                 </TouchableOpacity>
               );
             })
@@ -221,14 +170,15 @@ export function VoiceAssistantSessionDrawerContent({
         </ScrollView>
 
         <View className={voiceAssistantConversationThemeClass.drawerFooter}>
-          <TouchableOpacity
-            className="flex-row items-center gap-2 rounded-full px-2 py-2"
-            onPress={() => void onOpenSettings()}
-            testID="conversation-drawer-open-settings-button"
-          >
-            <VoiceAssistantIcon name="settings" size={20} color="#64748B" />
-            <Text className="text-[14px] font-medium text-slate-500">设置</Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center justify-end">
+            <TouchableOpacity
+              className="h-10 w-10 items-center justify-center rounded-full"
+              onPress={() => void onOpenSettings()}
+              testID="conversation-drawer-open-settings-button"
+            >
+              <VoiceAssistantIcon name="settings" size={20} color="#64748B" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 

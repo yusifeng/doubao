@@ -163,11 +163,18 @@ export function VoiceAssistantIcon({
         </Svg>
       );
     case 'edit':
-    case 'compose':
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24">
           <Path d="M4 20h4l9.5-9.5-4-4L4 16Z" {...common} />
           <Path d="M12.5 6.5l4 4" {...common} />
+        </Svg>
+      );
+    case 'compose':
+      return (
+        <Svg width={size} height={size} viewBox="0 0 24 24">
+          <Rect x="4" y="4" width="13" height="16" rx="2" {...common} />
+          <Path d="M15.5 3.5l4 4" {...common} />
+          <Path d="M19.5 7.5l-8 8H8v-3.5l8-8Z" {...common} />
         </Svg>
       );
     case 'chat':

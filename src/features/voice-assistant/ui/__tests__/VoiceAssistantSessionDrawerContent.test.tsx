@@ -124,12 +124,10 @@ describe('VoiceAssistantSessionDrawerContent', () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId('conversation-close-drawer-button'));
     fireEvent.press(screen.getByTestId('conversation-create-button'));
     fireEvent.press(screen.getByTestId('conversation-row-conv-2'));
     fireEvent.press(screen.getByTestId('conversation-drawer-open-settings-button'));
 
-    expect(onClose).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(onCreateConversation).toHaveBeenCalledTimes(1);
       expect(onOpenSettings).toHaveBeenCalledTimes(1);
