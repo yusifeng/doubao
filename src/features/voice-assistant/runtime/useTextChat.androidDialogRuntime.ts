@@ -1,4 +1,4 @@
-import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
+import { sanitizeAssistantText } from '../service/assistantText';
 import { createTurnTraceId } from './useTextChat.shared';
 import { runCustomLlmReplyRound } from './useTextChat.customReplyRound';
 import type { Message } from '../types/model';
@@ -26,10 +26,9 @@ export function createAndroidDialogRuntimeHandlers(deps: {
   androidDialogInterruptedRef: { current: boolean };
   androidDialogInterruptInFlightRef: { current: boolean };
   androidPlayerSpeakingRef: { current: boolean };
-  realtimeCallPhaseRef: { current: string };
+  getRealtimeCallPhase: () => string;
   voiceLoopActiveRef: { current: boolean };
-  pendingAssistantReply: string;
-  pendingAssistantReplyRef: { current: string };
+  getPendingAssistantReply: () => string;
   androidAssistantDraftRef: { current: string };
   ensureTurnTrace: (seed?: any) => { traceId: string; questionId?: string; replyId?: string };
   dispatchDialogOrchestrator: (action: any) => void;
@@ -223,7 +222,7 @@ export function createAndroidDialogRuntimeHandlers(deps: {
     if (!targetConversationId || !deps.useAndroidDialogRuntime || !deps.isVoiceActive) {
       return;
     }
-    if (deps.realtimeCallPhaseRef.current !== 'speaking') {
+    if (deps.getRealtimeCallPhase() !== 'speaking') {
       return;
     }
     if (deps.androidDialogInterruptInFlightRef.current) {
@@ -232,7 +231,7 @@ export function createAndroidDialogRuntimeHandlers(deps: {
 
     deps.androidDialogInterruptInFlightRef.current = true;
     const interruptedText = sanitizeAssistantText(
-      (deps.androidAssistantDraftRef.current || deps.pendingAssistantReplyRef.current || '').trim(),
+      (deps.androidAssistantDraftRef.current || deps.getPendingAssistantReply() || '').trim(),
     );
 
     try {
@@ -247,16 +246,18 @@ export function createAndroidDialogRuntimeHandlers(deps: {
         },
       });
       if (interruptedText) {
-        const currentMessages = await deps.repo.listMessages(targetConversationId);
-        const lastMessage = currentMessages[currentMessages.length - 1];
-        if (!(lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, interruptedText))) {
-          await deps.repo.appendMessage(targetConversationId, {
-            conversationId: targetConversationId,
-            role: 'assistant',
-            content: interruptedText,
-            type: 'audio',
-          });
-        }
+        await deps.repo.appendMessage(targetConversationId, {
+          conversationId: targetConversationId,
+          role: 'assistant',
+          content: interruptedText,
+          type: 'audio',
+          idempotencyKey: [
+            'assistant-interrupt',
+            deps.turnTraceRef.current?.traceId ??
+              `epoch-${deps.orchestratorStateRef.current.session.sessionEpoch}-turn-${deps.orchestratorStateRef.current.turn.turnId}`,
+            targetConversationId,
+          ].join(':'),
+        });
       }
       if (source === 'manual') {
         deps.setLiveUserTranscript('');
@@ -299,7 +300,7 @@ export function createAndroidDialogRuntimeHandlers(deps: {
     if (!deps.useAndroidDialogRuntime || !deps.isVoiceActive || !deps.voiceLoopActiveRef.current) {
       return;
     }
-    if (deps.realtimeCallPhaseRef.current !== 'speaking') {
+    if (deps.getRealtimeCallPhase() !== 'speaking') {
       return;
     }
     if (deps.androidDialogInterruptedRef.current || deps.androidDialogInterruptInFlightRef.current) {
@@ -326,7 +327,7 @@ export function createAndroidDialogRuntimeHandlers(deps: {
     const shouldRestartVoice =
       deps.voiceLoopActiveRef.current &&
       deps.androidDialogModeRef.current === 'voice' &&
-      deps.realtimeCallPhaseRef.current !== 'stopping';
+      deps.getRealtimeCallPhase() !== 'stopping';
 
     let interruptErrorMessage: string | null = null;
     try {

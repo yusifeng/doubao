@@ -25,12 +25,12 @@
 ### Phase 2: Runtime Store Introduction
 
 - [x] 引入 store lib（Zustand），仅托管 runtime 编排态
-- [ ] 清理 `useTextChat` 业务态 `ref`，保留副作用句柄型 `ref`
+- [x] 清理 `useTextChat` 业务态 `ref`，保留副作用句柄型 `ref`
 - [x] 将会话状态迁移为 reducer/store 单一路径写入
 
 ### Phase 3: Debt Cleanup + UX Regression Fixes
 
-- [ ] 用数据库幂等约束替换临时防重复补丁
+- [x] 用数据库幂等约束替换临时防重复补丁
 - [ ] 收敛消息草稿渲染路径，解决首帧闪烁
 - [ ] 统一错误与故障签名，补齐 runbook
 

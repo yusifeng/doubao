@@ -1,10 +1,14 @@
 import type { Conversation, Message } from '../types/model';
 import { generateUuidV7Like } from './sqlite/id';
 
+export type ConversationAppendMessageInput = Omit<Message, 'id' | 'createdAt'> & {
+  idempotencyKey?: string | null;
+};
+
 export interface ConversationRepo {
   createConversation(title?: string, options?: { systemPromptSnapshot?: string }): Promise<Conversation>;
   listConversations(): Promise<Conversation[]>;
-  appendMessage(conversationId: string, message: Omit<Message, 'id' | 'createdAt'>): Promise<Message>;
+  appendMessage(conversationId: string, message: ConversationAppendMessageInput): Promise<Message>;
   listMessages(conversationId: string): Promise<Message[]>;
   renameConversationTitle(conversationId: string, title: string): Promise<boolean>;
   deleteConversation(conversationId: string): Promise<boolean>;
@@ -17,6 +21,8 @@ export class InMemoryConversationRepo implements ConversationRepo {
   private conversations: Conversation[] = [];
 
   private messagesByConversation: Record<string, Message[]> = {};
+
+  private messagesByIdempotencyKey: Record<string, Message> = {};
 
   async createConversation(title = '新会话', options?: { systemPromptSnapshot?: string }): Promise<Conversation> {
     const now = Date.now();
@@ -39,8 +45,13 @@ export class InMemoryConversationRepo implements ConversationRepo {
 
   async appendMessage(
     conversationId: string,
-    message: Omit<Message, 'id' | 'createdAt'>,
+    message: ConversationAppendMessageInput,
   ): Promise<Message> {
+    const idempotencyKey = message.idempotencyKey?.trim();
+    if (idempotencyKey && this.messagesByIdempotencyKey[idempotencyKey]) {
+      return this.messagesByIdempotencyKey[idempotencyKey] as Message;
+    }
+
     const nextMessage: Message = {
       ...message,
       id: this.nextId('msg'),
@@ -58,6 +69,10 @@ export class InMemoryConversationRepo implements ConversationRepo {
           }
         : conversation,
     );
+
+    if (idempotencyKey) {
+      this.messagesByIdempotencyKey[idempotencyKey] = nextMessage;
+    }
 
     return nextMessage;
   }
@@ -91,6 +106,11 @@ export class InMemoryConversationRepo implements ConversationRepo {
   async deleteConversation(conversationId: string): Promise<boolean> {
     const existingCount = this.conversations.length;
     this.conversations = this.conversations.filter((conversation) => conversation.id !== conversationId);
+    Object.entries(this.messagesByIdempotencyKey).forEach(([key, message]) => {
+      if (message.conversationId === conversationId) {
+        delete this.messagesByIdempotencyKey[key];
+      }
+    });
     delete this.messagesByConversation[conversationId];
     return this.conversations.length < existingCount;
   }

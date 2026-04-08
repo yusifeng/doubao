@@ -1,5 +1,5 @@
 import type { Conversation, Message } from '../types/model';
-import type { ConversationRepo } from './conversationRepo';
+import type { ConversationAppendMessageInput, ConversationRepo } from './conversationRepo';
 import { AsyncStorageConversationRepo } from './asyncStorageConversationRepo';
 import { generateUuidV7Like } from './sqlite/id';
 import { SqliteVoiceAssistantStorageRepo } from './sqlite/sqliteVoiceAssistantStorageRepo';
@@ -73,7 +73,7 @@ export class PersistentConversationRepo implements ConversationRepo {
 
   async appendMessage(
     conversationId: string,
-    message: Omit<Message, 'id' | 'createdAt'>,
+    message: ConversationAppendMessageInput,
   ): Promise<Message> {
     if (this.useAsyncStorageFallback()) {
       return this.asyncStorageFallback.appendMessage(conversationId, message);
@@ -87,6 +87,7 @@ export class PersistentConversationRepo implements ConversationRepo {
       content: message.content,
       createdAt,
       streamState: 'final',
+      idempotencyKey: message.idempotencyKey ?? null,
     });
     return toMessage(inserted);
   }

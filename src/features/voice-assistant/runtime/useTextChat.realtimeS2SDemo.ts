@@ -10,7 +10,7 @@ export function createRealtimeS2SDemoHandlers(deps: {
   voiceLoopActiveRef: { current: boolean };
   voiceLoopRunningRef: { current: boolean };
   realtimeCallGenerationRef: { current: number };
-  realtimeCallPhaseRef: { current: string };
+  getRealtimeCallPhase: () => string;
   realtimePlaybackQueueEndAtRef: { current: number };
   realtimeUpstreamMutedUntilRef: { current: number };
   realtimeSilentFramesRef: { current: number };
@@ -196,7 +196,7 @@ export function createRealtimeS2SDemoHandlers(deps: {
       }
     } finally {
       deps.voiceLoopRunningRef.current = false;
-      if (deps.realtimeCallPhaseRef.current !== 'stopping') {
+      if (deps.getRealtimeCallPhase() !== 'stopping') {
         deps.updateRealtimeCallPhase('idle');
       }
       deps.providers.observability.log('info', 'demo realtime voice loop stopped', { mode: 'realtime_audio' });

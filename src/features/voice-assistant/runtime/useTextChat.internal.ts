@@ -137,7 +137,6 @@ export function useTextChat(): UseTextChatResult {
   const pendingAssistantReply = useStore(runtimeStore, (state) => state.pendingAssistantReply);
   const connectivityHint = useStore(runtimeStore, (state) => state.connectivityHint);
   const voiceDebugLastEvent = useStore(runtimeStore, (state) => state.voiceDebugLastEvent);
-  const s2sSessionReady = useStore(runtimeStore, (state) => state.s2sSessionReady);
   const setRuntimeStatus = useStore(runtimeStore, (state) => state.setRuntimeStatus);
   const setRuntimeConfig = useStore(runtimeStore, (state) => state.setRuntimeConfig);
   const setRuntimeConfigHydrated = useStore(runtimeStore, (state) => state.setRuntimeConfigHydrated);
@@ -153,8 +152,14 @@ export function useTextChat(): UseTextChatResult {
   const setConnectivityHint = useStore(runtimeStore, (state) => state.setConnectivityHint);
   const setVoiceDebugLastEvent = useStore(runtimeStore, (state) => state.setVoiceDebugLastEvent);
   const setS2SSessionReady = useStore(runtimeStore, (state) => state.setS2SSessionReady);
-  const runtimeConfigRef = useRef(runtimeConfig);
-  const runtimeConfigHydratedRef = useRef(runtimeConfigHydrated);
+  const getActiveConversationId = useCallback(() => runtimeStore.getState().activeConversationId, [runtimeStore]);
+  const getRuntimeConfig = useCallback(() => runtimeStore.getState().runtimeConfig, [runtimeStore]);
+  const getRuntimeConfigHydrated = useCallback(() => runtimeStore.getState().runtimeConfigHydrated, [runtimeStore]);
+  const getRealtimeCallPhase = useCallback(() => runtimeStore.getState().realtimeCallPhase, [runtimeStore]);
+  const getRealtimeListeningState = useCallback(() => runtimeStore.getState().realtimeListeningState, [runtimeStore]);
+  const getIsVoiceInputMuted = useCallback(() => runtimeStore.getState().isVoiceInputMuted, [runtimeStore]);
+  const getPendingAssistantReply = useCallback(() => runtimeStore.getState().pendingAssistantReply, [runtimeStore]);
+  const getS2SSessionReady = useCallback(() => runtimeStore.getState().s2sSessionReady, [runtimeStore]);
   const providers = useMemo(() => createVoiceAssistantProviders(runtimeConfig), [runtimeConfig]);
   const androidSessionController = useMemo(
     () => new SessionController(providers.dialogEngine),
@@ -191,7 +196,6 @@ export function useTextChat(): UseTextChatResult {
     : '官方S2S未就绪（禁兜底）';
   const voiceLoopActiveRef = useRef(false);
   const voiceLoopRunningRef = useRef(false);
-  const realtimeCallPhaseRef = useRef<RealtimeCallPhase>('idle');
   const realtimeCallGenerationRef = useRef(0);
   const callLifecycleLockRef = useRef(false);
   const lastRealtimeAssistantTextRef = useRef('');
@@ -202,7 +206,6 @@ export function useTextChat(): UseTextChatResult {
   const realtimeSpeechFramesRef = useRef(0);
   const realtimeSpeechDetectedRef = useRef(false);
   const realtimePostSpeechSilentFramesRef = useRef(0);
-  const realtimeListeningStateRef = useRef<RealtimeListeningState>('ready');
   const hasBootstrappedConversationRef = useRef(false);
   const androidDialogPreparedRef = useRef(false);
   const androidDialogPreparedWorkModeRef = useRef<DialogWorkMode | null>(null);
@@ -229,29 +232,15 @@ export function useTextChat(): UseTextChatResult {
   const orchestratorStateRef = useRef(createInitialDialogOrchestratorState());
   const dialogSessionEpochRef = useRef(0);
   const turnTraceRef = useRef<TurnTraceContext | null>(null);
-  const isVoiceInputMutedRef = useRef(false);
-  const pendingAssistantReplyRef = useRef(pendingAssistantReply);
   const pendingAssistantReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAssistantReplyLastCommitAtRef = useRef(0);
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
   const conversationSelectionEpochRef = useRef(0);
 
-  useEffect(() => {
-    runtimeConfigRef.current = runtimeConfig;
-  }, [runtimeConfig]);
-
-  useEffect(() => {
-    runtimeConfigHydratedRef.current = runtimeConfigHydrated;
-  }, [runtimeConfigHydrated]);
-
-  useEffect(() => {
-    pendingAssistantReplyRef.current = pendingAssistantReply;
-  }, [pendingAssistantReply]);
-
   const commitPendingAssistantReply = useCallback((value: string) => {
     pendingAssistantReplyLastCommitAtRef.current = Date.now();
     setPendingAssistantReply((current) => (current === value ? current : value));
-  }, []);
+  }, [setPendingAssistantReply]);
 
   const clearPendingAssistantReplyTimer = useCallback(() => {
     if (pendingAssistantReplyTimerRef.current) {
@@ -261,10 +250,9 @@ export function useTextChat(): UseTextChatResult {
   }, []);
 
   const setPendingAssistantReplyRuntime = useCallback((value: string) => {
-    pendingAssistantReplyRef.current = value;
     const next = value;
     const isClearing = next.length === 0;
-    const isFirstVisibleReply = pendingAssistantReply.length === 0 && next.length > 0;
+    const isFirstVisibleReply = getPendingAssistantReply().length === 0 && next.length > 0;
     const now = Date.now();
     const elapsed = now - pendingAssistantReplyLastCommitAtRef.current;
     const shouldCommitImmediately =
@@ -279,13 +267,13 @@ export function useTextChat(): UseTextChatResult {
     const waitMs = Math.max(0, PENDING_REPLY_RENDER_THROTTLE_MS - elapsed);
     pendingAssistantReplyTimerRef.current = setTimeout(() => {
       pendingAssistantReplyTimerRef.current = null;
-      commitPendingAssistantReply(pendingAssistantReplyRef.current);
+      commitPendingAssistantReply(next);
     }, waitMs);
   }, [
     PENDING_REPLY_RENDER_THROTTLE_MS,
     clearPendingAssistantReplyTimer,
     commitPendingAssistantReply,
-    pendingAssistantReply,
+    getPendingAssistantReply,
   ]);
 
   useEffect(
@@ -298,8 +286,7 @@ export function useTextChat(): UseTextChatResult {
   useRuntimeConfigHydrationEffect({
     setRuntimeConfig,
     setRuntimeConfigHydrated,
-    runtimeConfigRef,
-    runtimeConfigHydratedRef,
+    getRuntimeConfig,
   });
   useBootstrapConversationEffect({
     runtimeConfigHydrated,
@@ -308,7 +295,7 @@ export function useTextChat(): UseTextChatResult {
     setConversations,
     setMessages,
     setActiveConversationId,
-    runtimeConfigRef,
+    getRuntimeConfig,
   });
   useCustomReplyConfigHintEffect({
     replyChainMode,
@@ -320,11 +307,12 @@ export function useTextChat(): UseTextChatResult {
     () =>
       createRuntimeStateHandlers({
         activeConversationId,
+        getActiveConversationId,
         repo,
         providers,
         setRuntimeStatus,
-        runtimeConfigRef,
-        runtimeConfigHydratedRef,
+        getRuntimeConfig,
+        getRuntimeConfigHydrated,
         getEffectiveRuntimeConfig,
         isRuntimeConfigEqual,
         setRuntimeConfig,
@@ -364,11 +352,10 @@ export function useTextChat(): UseTextChatResult {
         androidDialogClientTtsSelectionPromiseRef,
         androidDialogClientTtsSelectionReadyRef,
         androidCustomClientTtsStreamStartedRef,
-        isVoiceInputMutedRef,
         androidRetiredSessionIdsRef,
-        realtimeCallPhaseRef,
-        realtimeListeningStateRef,
-        s2sSessionReady,
+        getRealtimeCallPhase,
+        getRealtimeListeningState,
+        getS2SSessionReady,
         callLifecycleLockRef,
         withTimeout,
         CALL_LIFECYCLE_LOCK_WAIT_TIMEOUT_MS,
@@ -382,7 +369,20 @@ export function useTextChat(): UseTextChatResult {
         androidReplyGenerationRef,
         conversationSelectionEpochRef,
       }),
-    [activeConversationId, androidDialogWorkMode, providers, replyChainMode, repo, s2sSessionReady, setRuntimeStatus],
+    [
+      activeConversationId,
+      androidDialogWorkMode,
+      getActiveConversationId,
+      getRealtimeCallPhase,
+      getRealtimeListeningState,
+      getRuntimeConfig,
+      getRuntimeConfigHydrated,
+      getS2SSessionReady,
+      providers,
+      replyChainMode,
+      repo,
+      setRuntimeStatus,
+    ],
   );
 
   const syncConversationState = useCallback(() => runtimeStateHandlers.syncConversationState(), [runtimeStateHandlers]);
@@ -474,8 +474,7 @@ export function useTextChat(): UseTextChatResult {
         useAndroidDialogRuntime,
         activeConversationId,
         conversations,
-        pendingAssistantReply,
-        pendingAssistantReplyRef,
+        getPendingAssistantReply,
         repo,
         providers,
         runtimeConfig,
@@ -506,6 +505,7 @@ export function useTextChat(): UseTextChatResult {
         androidAssistantDraftRef,
         androidReplyGenerationRef,
         dialogSessionEpochRef,
+        orchestratorStateRef,
         VOICE_ASSISTANT_DIALOG_MODEL,
         VOICE_ASSISTANT_DIALOG_BOT_NAME,
         KONAN_CHARACTER_MANIFEST,
@@ -523,8 +523,8 @@ export function useTextChat(): UseTextChatResult {
       buildDialogLogContext,
       conversations,
       dispatchDialogOrchestrator,
+      getPendingAssistantReply,
       isTestEnv,
-      pendingAssistantReply,
       providers,
       recordAudit,
       rememberRetiredAndroidDialogSession,
@@ -594,10 +594,9 @@ export function useTextChat(): UseTextChatResult {
     androidDialogInterruptedRef,
     androidDialogInterruptInFlightRef,
     androidPlayerSpeakingRef,
-    realtimeCallPhaseRef,
+    getRealtimeCallPhase,
     voiceLoopActiveRef,
-    pendingAssistantReply,
-    pendingAssistantReplyRef,
+    getPendingAssistantReply,
     androidAssistantDraftRef,
     ensureTurnTrace,
     dispatchDialogOrchestrator,
@@ -624,9 +623,10 @@ export function useTextChat(): UseTextChatResult {
     dispatchDialogOrchestrator,
     ensureAndroidDialogConversation,
     ensureTurnTrace,
+    getPendingAssistantReply,
+    getRealtimeCallPhase,
     isVoiceActive,
     llmConfig,
-    pendingAssistantReply,
     providers,
     recordAudit,
     replyChainMode,
@@ -700,8 +700,8 @@ export function useTextChat(): UseTextChatResult {
         mergeTurnTraceFromDialogEvent,
         replyChainMode,
         replyStreamMode: runtimeConfig.replyStreamMode,
-        realtimeCallPhaseRef,
-        isVoiceInputMutedRef,
+        getRealtimeCallPhase,
+        getIsVoiceInputMuted,
         androidDialogModeRef,
         androidObservedPlatformReplyInCustomRef,
         beginAndroidClientTtsSelectionForTurn,
@@ -724,8 +724,7 @@ export function useTextChat(): UseTextChatResult {
         runAndroidReplyFlow,
         recoverFromPlatformReplyLeakInCustomMode,
         mergeAssistantDraft,
-        pendingAssistantReply,
-        pendingAssistantReplyRef,
+        getPendingAssistantReply,
       }),
     [
       activeConversationId,
@@ -736,9 +735,11 @@ export function useTextChat(): UseTextChatResult {
       dispatchDialogOrchestrator,
       ensureAndroidDialogConversation,
       ensureTurnTrace,
+      getIsVoiceInputMuted,
+      getPendingAssistantReply,
+      getRealtimeCallPhase,
       maybeInterruptOnBargeIn,
       mergeTurnTraceFromDialogEvent,
-      pendingAssistantReply,
       providers,
       recordAudit,
       recoverFromPlatformReplyLeakInCustomMode,
@@ -845,7 +846,7 @@ export function useTextChat(): UseTextChatResult {
     voiceLoopActiveRef,
     voiceLoopRunningRef,
     realtimeCallGenerationRef,
-    realtimeCallPhaseRef,
+    getRealtimeCallPhase,
     realtimePlaybackQueueEndAtRef,
     realtimeUpstreamMutedUntilRef,
     realtimeSilentFramesRef,
@@ -867,6 +868,7 @@ export function useTextChat(): UseTextChatResult {
     activeConversationId,
     appendAssistantAudioMessage,
     ensureS2SSession,
+    getRealtimeCallPhase,
     providers,
     repo,
     resetRealtimeCallState,
@@ -962,9 +964,9 @@ export function useTextChat(): UseTextChatResult {
         voiceLoopActiveRef,
         voiceLoopRunningRef,
         androidDialogModeRef,
-        realtimeCallPhaseRef,
+        getRealtimeCallPhase,
         androidPlayerSpeakingRef,
-        isVoiceInputMutedRef,
+        getIsVoiceInputMuted,
       }),
     [
       activeConversationId,
@@ -973,6 +975,8 @@ export function useTextChat(): UseTextChatResult {
       dispatchDialogOrchestrator,
       effectiveVoicePipelineMode,
       ensureAndroidDialogConversation,
+      getIsVoiceInputMuted,
+      getRealtimeCallPhase,
       isTestEnv,
       isVoiceActive,
       isVoiceInputMuted,
@@ -1019,8 +1023,6 @@ export function useTextChat(): UseTextChatResult {
     async (draft: RuntimeConfigDraft) => {
       const result = await textPipeline.saveRuntimeConfig(draft);
       if (result.ok && 'nextConfig' in result && result.nextConfig) {
-        runtimeConfigRef.current = result.nextConfig;
-        runtimeConfigHydratedRef.current = true;
         setRuntimeConfigHydrated(true);
         setRuntimeConfig((current) =>
           isRuntimeConfigEqual(current, result.nextConfig) ? current : result.nextConfig,
@@ -1028,7 +1030,7 @@ export function useTextChat(): UseTextChatResult {
       }
       return { ok: result.ok, message: result.message };
     },
-    [textPipeline],
+    [setRuntimeConfig, setRuntimeConfigHydrated, textPipeline],
   );
 
   const testLLMConfig = useCallback(

@@ -36,9 +36,9 @@ export function createVoiceToggleHandlers(deps: {
   voiceLoopActiveRef: { current: boolean };
   voiceLoopRunningRef: { current: boolean };
   androidDialogModeRef: { current: 'voice' | 'text' | null };
-  realtimeCallPhaseRef: { current: string };
+  getRealtimeCallPhase: () => string;
   androidPlayerSpeakingRef: { current: boolean };
-  isVoiceInputMutedRef: { current: boolean };
+  getIsVoiceInputMuted: () => boolean;
 }) {
   const interruptVoiceOutput = async () => {
     await deps.performAndroidDialogInterrupt('manual');
@@ -48,17 +48,17 @@ export function createVoiceToggleHandlers(deps: {
     if (!deps.supportsVoiceInputMute || !deps.isVoiceActive) {
       return;
     }
-    const previousMuted = deps.isVoiceInputMutedRef.current;
+    const previousMuted = deps.getIsVoiceInputMuted();
     const nextMuted = !previousMuted;
     deps.setVoiceInputMutedRuntime(nextMuted);
 
     const isStillInActiveVoiceCall = () =>
       deps.voiceLoopActiveRef.current &&
       deps.androidDialogModeRef.current === 'voice' &&
-      deps.realtimeCallPhaseRef.current !== 'stopping' &&
-      deps.realtimeCallPhaseRef.current !== 'idle';
+      deps.getRealtimeCallPhase() !== 'stopping' &&
+      deps.getRealtimeCallPhase() !== 'idle';
     const shouldRollbackMuteState = () =>
-      deps.realtimeCallPhaseRef.current !== 'stopping' && deps.realtimeCallPhaseRef.current !== 'idle';
+      deps.getRealtimeCallPhase() !== 'stopping' && deps.getRealtimeCallPhase() !== 'idle';
 
     try {
       if (nextMuted) {
@@ -74,7 +74,7 @@ export function createVoiceToggleHandlers(deps: {
         if (!isStillInActiveVoiceCall()) {
           return;
         }
-        if (deps.androidPlayerSpeakingRef.current || deps.realtimeCallPhaseRef.current === 'speaking') {
+        if (deps.androidPlayerSpeakingRef.current || deps.getRealtimeCallPhase() === 'speaking') {
           deps.updateRealtimeCallPhase('speaking');
           deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'speaking' });
           await deps.updateConversationRuntimeStatus('speaking', { refreshConversations: true });
@@ -220,8 +220,8 @@ export function createVoiceToggleHandlers(deps: {
       await deps.withCallLifecycleLock(async () => {
         const isVoiceCallOngoing =
           deps.voiceLoopActiveRef.current ||
-          (deps.realtimeCallPhaseRef.current !== 'idle' &&
-            deps.realtimeCallPhaseRef.current !== 'stopping');
+          (deps.getRealtimeCallPhase() !== 'idle' &&
+            deps.getRealtimeCallPhase() !== 'stopping');
         if (!isVoiceCallOngoing) {
           return;
         }
@@ -239,8 +239,8 @@ export function createVoiceToggleHandlers(deps: {
     if (deps.effectiveVoicePipelineMode === 'realtime_audio') {
       await deps.withCallLifecycleLock(async () => {
         const isRealtimeCallOngoing =
-          (deps.realtimeCallPhaseRef.current !== 'idle' &&
-            deps.realtimeCallPhaseRef.current !== 'stopping') ||
+          (deps.getRealtimeCallPhase() !== 'idle' &&
+            deps.getRealtimeCallPhase() !== 'stopping') ||
           deps.isVoiceActive;
         if (!isRealtimeCallOngoing) {
           return;

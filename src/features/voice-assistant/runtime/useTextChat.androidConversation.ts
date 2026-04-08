@@ -1,4 +1,4 @@
-import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
+import { sanitizeAssistantText } from '../service/assistantText';
 import type { DialogConversationInputMode } from '../../../core/providers/dialog-engine/types';
 import type { AndroidDialogMode } from './useTextChat.shared';
 import { ensureAndroidClientTriggeredTts as ensureAndroidClientTriggeredTtsFlow } from './useTextChat.androidClientTts';
@@ -48,14 +48,9 @@ export function createAndroidConversationHandlers(deps: any) {
       return;
     }
     const draftText = sanitizeAssistantText(
-      (deps.androidAssistantDraftRef.current || deps.pendingAssistantReplyRef.current || '').trim(),
+      (deps.androidAssistantDraftRef.current || deps.getPendingAssistantReply() || '').trim(),
     );
     if (!draftText) {
-      return;
-    }
-    const currentMessages = await deps.repo.listMessages(targetConversationId);
-    const lastMessage = currentMessages[currentMessages.length - 1];
-    if (lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, draftText)) {
       return;
     }
     await deps.repo.appendMessage(targetConversationId, {
@@ -63,6 +58,13 @@ export function createAndroidConversationHandlers(deps: any) {
       role: 'assistant',
       content: draftText,
       type: deps.androidDialogModeRef.current === 'voice' ? 'audio' : 'text',
+      idempotencyKey: [
+        'assistant-draft',
+        deps.androidDialogSessionIdRef.current ?? 'no-session',
+        deps.orchestratorStateRef.current.session.sessionEpoch,
+        deps.orchestratorStateRef.current.turn.turnId,
+        targetConversationId,
+      ].join(':'),
     });
   };
 
@@ -90,7 +92,6 @@ export function createAndroidConversationHandlers(deps: any) {
       await deps.androidSessionController.stopConversation();
       deps.androidDialogModeRef.current = null;
       deps.androidAssistantDraftRef.current = '';
-      deps.pendingAssistantReplyRef.current = '';
       deps.setPendingAssistantReply('');
       deps.setLiveUserTranscript('');
       deps.clearTurnTrace();
@@ -169,7 +170,6 @@ export function createAndroidConversationHandlers(deps: any) {
     await deps.androidSessionController.stopConversation();
     deps.androidDialogModeRef.current = null;
     deps.androidAssistantDraftRef.current = '';
-    deps.pendingAssistantReplyRef.current = '';
     deps.setPendingAssistantReply('');
     deps.setLiveUserTranscript('');
     deps.recordAudit('session.stopped');

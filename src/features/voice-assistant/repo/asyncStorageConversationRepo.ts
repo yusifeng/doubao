@@ -1,5 +1,5 @@
 import type { Conversation, Message } from '../types/model';
-import type { ConversationRepo } from './conversationRepo';
+import type { ConversationAppendMessageInput, ConversationRepo } from './conversationRepo';
 import { generateUuidV7Like } from './sqlite/id';
 
 const STORAGE_KEY = 'voice_assistant.conversation_repo.v1';
@@ -7,6 +7,7 @@ const STORAGE_KEY = 'voice_assistant.conversation_repo.v1';
 type StoredConversationState = {
   conversations: Conversation[];
   messagesByConversation: Record<string, Message[]>;
+  messageIdByIdempotencyKey: Record<string, string>;
 };
 
 type AsyncStorageLike = {
@@ -36,6 +37,7 @@ function createEmptyState(): StoredConversationState {
   return {
     conversations: [],
     messagesByConversation: {},
+    messageIdByIdempotencyKey: {},
   };
 }
 
@@ -81,6 +83,10 @@ export class AsyncStorageConversationRepo implements ConversationRepo {
       this.state = {
         conversations: this.sortConversations(parsed.conversations),
         messagesByConversation: parsed.messagesByConversation,
+        messageIdByIdempotencyKey:
+          typeof parsed.messageIdByIdempotencyKey === 'object' && parsed.messageIdByIdempotencyKey !== null
+            ? parsed.messageIdByIdempotencyKey
+            : {},
       };
     } catch {
       this.state = createEmptyState();
@@ -102,6 +108,16 @@ export class AsyncStorageConversationRepo implements ConversationRepo {
 
   private sortConversations(conversations: Conversation[]): Conversation[] {
     return [...conversations].sort((left, right) => right.updatedAt - left.updatedAt);
+  }
+
+  private findMessageById(messageId: string): Message | null {
+    for (const conversationMessages of Object.values(this.state.messagesByConversation)) {
+      const existing = conversationMessages.find((message) => message.id === messageId);
+      if (existing) {
+        return existing;
+      }
+    }
+    return null;
   }
 
   async createConversation(title = '新会话', options?: { systemPromptSnapshot?: string }): Promise<Conversation> {
@@ -128,11 +144,25 @@ export class AsyncStorageConversationRepo implements ConversationRepo {
 
   async appendMessage(
     conversationId: string,
-    message: Omit<Message, 'id' | 'createdAt'>,
+    message: ConversationAppendMessageInput,
   ): Promise<Message> {
     await this.hydrateIfNeeded();
+    const idempotencyKey = message.idempotencyKey?.trim();
+    if (idempotencyKey) {
+      const existingMessageId = this.state.messageIdByIdempotencyKey[idempotencyKey];
+      if (existingMessageId) {
+        const existingMessage = this.findMessageById(existingMessageId);
+        if (existingMessage) {
+          return existingMessage;
+        }
+        delete this.state.messageIdByIdempotencyKey[idempotencyKey];
+      }
+    }
     const nextMessage: Message = {
-      ...message,
+      conversationId: message.conversationId,
+      role: message.role,
+      type: message.type,
+      content: message.content,
       id: this.nextId(),
       createdAt: Date.now(),
     };
@@ -148,6 +178,10 @@ export class AsyncStorageConversationRepo implements ConversationRepo {
           }
         : conversation,
     );
+
+    if (idempotencyKey) {
+      this.state.messageIdByIdempotencyKey[idempotencyKey] = nextMessage.id;
+    }
     this.state.conversations = this.sortConversations(this.state.conversations);
     await this.persistState();
     return nextMessage;
@@ -188,8 +222,16 @@ export class AsyncStorageConversationRepo implements ConversationRepo {
   async deleteConversation(conversationId: string): Promise<boolean> {
     await this.hydrateIfNeeded();
     const previousLength = this.state.conversations.length;
+    const deletedMessageIds = new Set(
+      (this.state.messagesByConversation[conversationId] ?? []).map((message) => message.id),
+    );
     this.state.conversations = this.state.conversations.filter((conversation) => conversation.id !== conversationId);
     delete this.state.messagesByConversation[conversationId];
+    Object.entries(this.state.messageIdByIdempotencyKey).forEach(([key, messageId]) => {
+      if (deletedMessageIds.has(messageId)) {
+        delete this.state.messageIdByIdempotencyKey[key];
+      }
+    });
     const deleted = this.state.conversations.length < previousLength;
     if (!deleted) {
       return false;

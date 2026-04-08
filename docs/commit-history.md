@@ -1179,3 +1179,44 @@
   - Runtime status state-source从本地 machine/ref 切到 store 后，若存在未迁移读写路径，可能出现状态可见性不一致。
 - Rollback:
   - Revert the files above to restore prior single-sink logging and pre-store runtime state flow.
+
+## 2026-04-09 03:05 (CST) - refactor(voice-chat): remove state refs and enforce idempotent writes
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `src/features/voice-assistant/repo/conversationRepo.ts`
+  - `src/features/voice-assistant/repo/persistentConversationRepo.ts`
+  - `src/features/voice-assistant/repo/asyncStorageConversationRepo.ts`
+  - `src/features/voice-assistant/repo/__tests__/conversationRepo.idempotency.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.effects.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.realtimeS2SDemo.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.voiceToggle.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidConversation.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogRuntime.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts`
+- Summary:
+  - Removed runtime business-state mirror refs in `useTextChat` chain (`runtimeConfig/runtimeHydrated/realtimePhase/listeningState/mute/pendingReply`) and switched dependent runtime modules to read from store getters, keeping only side-effect handle refs.
+  - Extended `ConversationRepo.appendMessage` to accept optional `idempotencyKey` and propagated it through SQLite + AsyncStorage + InMemory repositories for consistent duplicate suppression across all storage backends.
+  - Replaced Android runtime duplicate patches (last-message text compare on persistence paths) with idempotent writes for assistant draft persistence, interrupt persistence, platform final persistence, and custom-voice failure hints.
+  - Strengthened platform final turn-key fallback to include orchestrator turn/session context, avoiding cross-turn key collisions when upstream event ids are missing.
+  - Removed text-round pending placeholder injection (`'...'`) before stream starts to reduce first-frame draft flicker.
+  - Updated active refactor plan status: Phase 2 ref cleanup completed; Phase 3 idempotency item completed.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/repo/__tests__/conversationRepo.idempotency.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.runtimeState.test.ts` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx` (pass, existing `act(...)` warning retained)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings)
+- Risk:
+  - Runtime getter reads now rely on store snapshots in async callbacks; if future modules bypass runtime handlers and read stale closures directly, state consistency risk returns.
+  - Idempotency key strategy depends on key-quality conventions in runtime call paths; malformed keys can still lead to duplicate writes or over-deduping.
+  - Removing `'...'` placeholder may alter perceived progress during extremely slow first token latency.
+- Rollback:
+  - Revert the scope files above to restore ref-mirrored runtime behavior, text-compare duplicate patches, and placeholder-first pending rendering.

@@ -8,8 +8,7 @@ import { isRuntimeConfigEqual } from '../config/runtimeConfig';
 export function useRuntimeConfigHydrationEffect(params: {
   setRuntimeConfig: (value: any) => void;
   setRuntimeConfigHydrated: (value: boolean) => void;
-  runtimeConfigRef: { current: RuntimeConfig };
-  runtimeConfigHydratedRef: { current: boolean };
+  getRuntimeConfig: () => RuntimeConfig;
 }) {
   useEffect(() => {
     let mounted = true;
@@ -18,14 +17,12 @@ export function useRuntimeConfigHydrationEffect(params: {
       try {
         nextRuntimeConfig = await getEffectiveRuntimeConfig();
       } catch {
-        nextRuntimeConfig = params.runtimeConfigRef.current;
+        nextRuntimeConfig = params.getRuntimeConfig();
       }
       if (mounted) {
         params.setRuntimeConfig((current: RuntimeConfig) =>
           isRuntimeConfigEqual(current, nextRuntimeConfig) ? current : nextRuntimeConfig,
         );
-        params.runtimeConfigRef.current = nextRuntimeConfig;
-        params.runtimeConfigHydratedRef.current = true;
         params.setRuntimeConfigHydrated(true);
       }
     })();
@@ -42,7 +39,7 @@ export function useBootstrapConversationEffect(params: {
   setConversations: (value: any) => void;
   setMessages: (value: any) => void;
   setActiveConversationId: (value: string | null) => void;
-  runtimeConfigRef: { current: RuntimeConfig };
+  getRuntimeConfig: () => RuntimeConfig;
 }) {
   useEffect(() => {
     if (!params.runtimeConfigHydrated || params.hasBootstrappedConversationRef.current) {
@@ -66,7 +63,7 @@ export function useBootstrapConversationEffect(params: {
         return;
       }
       const created = await params.repo.createConversation('默认会话', {
-        systemPromptSnapshot: params.runtimeConfigRef.current.persona.systemPrompt,
+        systemPromptSnapshot: params.getRuntimeConfig().persona.systemPrompt,
       });
       const refreshedConversations = await params.repo.listConversations();
       if (!mounted) {

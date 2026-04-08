@@ -162,7 +162,7 @@ export function createTextPipelineHandlers(deps: {
       type: userMessageType,
     });
     await deps.syncConversationState();
-    deps.setPendingAssistantReply('...');
+    deps.setPendingAssistantReply('');
 
     try {
       const assistantText = await generateAssistantReplyFromProvider({

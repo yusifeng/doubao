@@ -55,6 +55,7 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
     let activeConversationId: string | null = 'conv-root';
     const deps: any = {
       activeConversationId,
+      getActiveConversationId: jest.fn(() => activeConversationId),
       repo,
       setRuntimeStatus: jest.fn(),
       setActiveConversationId: jest.fn((nextId: string | null) => {
@@ -66,8 +67,8 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
       setLiveUserTranscript: jest.fn(),
       setPendingAssistantReply: jest.fn(),
       conversationSelectionEpochRef: { current: 0 },
-      runtimeConfigRef: { current: { persona: { systemPrompt: 'prompt' } } },
-      runtimeConfigHydratedRef: { current: true },
+      getRuntimeConfig: jest.fn(() => ({ persona: { systemPrompt: 'prompt' } })),
+      getRuntimeConfigHydrated: jest.fn(() => true),
       getEffectiveRuntimeConfig: jest.fn(),
       isRuntimeConfigEqual: jest.fn(),
       setRuntimeConfig: jest.fn(),
@@ -122,6 +123,7 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
     let activeConversationId: string | null = 'conv-root';
     const deps: any = {
       activeConversationId,
+      getActiveConversationId: jest.fn(() => activeConversationId),
       repo,
       setRuntimeStatus: jest.fn(),
       setActiveConversationId: jest.fn((nextId: string | null) => {
@@ -133,8 +135,8 @@ describe('createRuntimeStateHandlers conversation selection epoch guard', () => 
       setLiveUserTranscript: jest.fn(),
       setPendingAssistantReply: jest.fn(),
       conversationSelectionEpochRef: { current: 0 },
-      runtimeConfigRef: { current: { persona: { systemPrompt: 'prompt' } } },
-      runtimeConfigHydratedRef: { current: true },
+      getRuntimeConfig: jest.fn(() => ({ persona: { systemPrompt: 'prompt' } })),
+      getRuntimeConfigHydrated: jest.fn(() => true),
       getEffectiveRuntimeConfig: jest.fn(),
       isRuntimeConfigEqual: jest.fn(),
       setRuntimeConfig: jest.fn(),

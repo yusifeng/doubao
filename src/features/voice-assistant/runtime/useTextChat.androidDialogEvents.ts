@@ -37,6 +37,7 @@ const MAX_PLATFORM_FINAL_TEXT_CACHE_SIZE = 120;
 function resolvePlatformReplyTurnKey(
   event: DialogEngineEvent,
   fallbackConversationId: string | null,
+  fallbackTurnContext?: { turnId?: number | null; sessionEpoch?: number | null },
 ): string | null {
   const replyId = event.replyId?.trim();
   if (replyId) {
@@ -50,8 +51,18 @@ function resolvePlatformReplyTurnKey(
   if (traceId) {
     return `trace:${traceId}`;
   }
-  if (event.sessionId || typeof event.turnIndex === 'number' || fallbackConversationId) {
-    return `session:${event.sessionId ?? 'unknown'}:turn:${event.turnIndex ?? 'unknown'}:conversation:${fallbackConversationId ?? 'unknown'}`;
+  if (
+    event.sessionId ||
+    typeof event.turnIndex === 'number' ||
+    fallbackConversationId ||
+    typeof fallbackTurnContext?.turnId === 'number'
+  ) {
+    return [
+      `session:${event.sessionId ?? 'unknown'}`,
+      `turn:${event.turnIndex ?? fallbackTurnContext?.turnId ?? 'unknown'}`,
+      `sessionEpoch:${fallbackTurnContext?.sessionEpoch ?? 'unknown'}`,
+      `conversation:${fallbackConversationId ?? 'unknown'}`,
+    ].join(':');
   }
   return null;
 }
@@ -245,7 +256,7 @@ export function handleAndroidDialogPayloadEvent(
         deps.androidDialogModeRef.current === 'voice' &&
         !deps.androidCustomClientTtsStreamStartedRef.current;
       const isCurrentlySpeaking =
-        deps.realtimeCallPhaseRef.current === 'speaking' || deps.androidPlayerSpeakingRef.current;
+        deps.getRealtimeCallPhase() === 'speaking' || deps.androidPlayerSpeakingRef.current;
       if (shouldIgnoreCustomFinishBeforeStreamStart && !isCurrentlySpeaking) {
         deps.providers.observability.log(
           'info',
@@ -267,10 +278,10 @@ export function handleAndroidDialogPayloadEvent(
       return true;
     }
     case 'asr_start': {
-      if (semanticEvent !== 'user_speech_started' || deps.isVoiceInputMutedRef.current) {
+      if (semanticEvent !== 'user_speech_started' || deps.getIsVoiceInputMuted()) {
         return true;
       }
-      const wasSpeaking = deps.realtimeCallPhaseRef.current === 'speaking';
+      const wasSpeaking = deps.getRealtimeCallPhase() === 'speaking';
       if (deps.replyChainMode === 'custom_llm') {
         deps.androidDialogClientTtsEnabledRef.current = false;
         deps.androidObservedPlatformReplyInCustomRef.current = false;
@@ -317,7 +328,7 @@ export function handleAndroidDialogPayloadEvent(
       return true;
     }
     case 'asr_partial': {
-      if (deps.isVoiceInputMutedRef.current) {
+      if (deps.getIsVoiceInputMuted()) {
         return true;
       }
       deps.maybeInterruptOnBargeIn({ eventType: 'asr_partial', text: event.text });
@@ -325,7 +336,7 @@ export function handleAndroidDialogPayloadEvent(
         return true;
       }
       const waitingForInterruptWhileSpeaking =
-        deps.realtimeCallPhaseRef.current === 'speaking' && !deps.androidDialogInterruptedRef.current;
+        deps.getRealtimeCallPhase() === 'speaking' && !deps.androidDialogInterruptedRef.current;
       deps.setLiveUserTranscript(event.text);
       deps.dispatchDialogOrchestrator({ type: 'draft_live_transcript', text: event.text });
       if (waitingForInterruptWhileSpeaking) {
@@ -337,10 +348,10 @@ export function handleAndroidDialogPayloadEvent(
       return true;
     }
     case 'asr_final': {
-      if (semanticEvent !== 'user_speech_finalized' || deps.isVoiceInputMutedRef.current) {
+      if (semanticEvent !== 'user_speech_finalized' || deps.getIsVoiceInputMuted()) {
         return true;
       }
-      if (deps.realtimeCallPhaseRef.current === 'speaking' && !deps.androidDialogInterruptedRef.current) {
+      if (deps.getRealtimeCallPhase() === 'speaking' && !deps.androidDialogInterruptedRef.current) {
         return true;
       }
       const turnConversationId = deps.androidDialogConversationIdRef.current ?? deps.activeConversationId;
@@ -402,6 +413,7 @@ export function handleAndroidDialogPayloadEvent(
                 role: 'assistant',
                 content: '当前语音链路未完成自定义接管，本轮已取消，请重试。',
                 type: 'text',
+                idempotencyKey: ['assistant-custom-tts-selection-failed', turnConversationId, replyGeneration].join(':'),
               });
               deps.setConnectivityHint('本轮自定义语音接管失败，正在重置会话。');
               if (turnConversationId === deps.activeConversationId) {
@@ -443,16 +455,13 @@ export function handleAndroidDialogPayloadEvent(
           });
           if (deps.replyChainMode === 'custom_llm') {
             const fallbackMessage = '当前语音链路未完成自定义接管，本轮已取消，请重试。';
-            const existingMessages = await deps.repo.listMessages(turnConversationId);
-            const lastMessage = existingMessages[existingMessages.length - 1];
-            if (!(lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, fallbackMessage))) {
-              await deps.repo.appendMessage(turnConversationId, {
-                conversationId: turnConversationId,
-                role: 'assistant',
-                content: fallbackMessage,
-                type: 'text',
-              });
-            }
+            await deps.repo.appendMessage(turnConversationId, {
+              conversationId: turnConversationId,
+              role: 'assistant',
+              content: fallbackMessage,
+              type: 'text',
+              idempotencyKey: ['assistant-custom-voice-failed', turnConversationId, replyGeneration].join(':'),
+            });
             deps.setConnectivityHint('本轮自定义语音接管失败，已回到监听状态。');
           } else {
             deps.setConnectivityHint(`语音回合失败：${message}`);
@@ -527,10 +536,17 @@ export function handleAndroidDialogPayloadEvent(
       const draftText = finalizeOfficialS2SReply(
         event.text,
         deps.androidAssistantDraftRef.current,
-        deps.pendingAssistantReplyRef.current,
+        deps.getPendingAssistantReply(),
       ).trim();
       const finalText = sanitizeAssistantText(draftText);
-      const finalTurnKey = resolvePlatformReplyTurnKey(event, finalConversationId);
+      const finalTurnKey = resolvePlatformReplyTurnKey(
+        event,
+        finalConversationId,
+        {
+          turnId: deps.orchestratorStateRef.current.turn.turnId,
+          sessionEpoch: deps.orchestratorStateRef.current.session.sessionEpoch,
+        },
+      );
       if (finalTurnKey) {
         const inFlightTurnKeys = deps.androidPlatformFinalInFlightTurnKeysRef.current as Set<string>;
         const pendingTextByTurnKey = deps.androidPlatformFinalPendingTextByTurnKeyRef.current as Map<string, string>;
@@ -579,20 +595,16 @@ export function handleAndroidDialogPayloadEvent(
           );
           deps.recordAudit('reply.platform.final', { extra: { textLength: mergedFinalText.length } });
           deps.setLiveUserTranscript('');
-          deps.pendingAssistantReplyRef.current = '';
           deps.setPendingAssistantReply('');
           deps.androidAssistantDraftRef.current = '';
           if (finalConversationId && mergedFinalText) {
-            const currentMessages = await deps.repo.listMessages(finalConversationId);
-            const lastMessage = currentMessages[currentMessages.length - 1];
-            if (!(lastMessage?.role === 'assistant' && isSameAssistantText(lastMessage.content, mergedFinalText))) {
-              await deps.repo.appendMessage(finalConversationId, {
-                conversationId: finalConversationId,
-                role: 'assistant',
-                content: mergedFinalText,
-                type: deps.voiceLoopActiveRef.current ? 'audio' : 'text',
-              });
-            }
+            await deps.repo.appendMessage(finalConversationId, {
+              conversationId: finalConversationId,
+              role: 'assistant',
+              content: mergedFinalText,
+              type: deps.voiceLoopActiveRef.current ? 'audio' : 'text',
+              idempotencyKey: ['assistant-platform-final', finalTurnKey ?? 'unknown-turn', finalConversationId].join(':'),
+            });
           }
           if (finalTurnKey && mergedFinalText) {
             rememberPlatformFinalTextByTurnKey(

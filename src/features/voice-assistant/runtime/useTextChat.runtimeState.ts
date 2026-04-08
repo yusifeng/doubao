@@ -4,6 +4,11 @@ import { buildDialogLogContextPayload, mergeTraceSeedFromEvent, upsertTurnTrace 
 import type { RealtimeCallPhase, RealtimeListeningState, TurnTraceContext } from './useTextChat.shared';
 
 export function createRuntimeStateHandlers(deps: any) {
+  const getActiveConversationId = (): string | null =>
+    (typeof deps.getActiveConversationId === 'function'
+      ? deps.getActiveConversationId()
+      : deps.activeConversationId) ?? null;
+
   const setRuntimeStatus = (
     status: 'idle' | 'listening' | 'thinking' | 'speaking' | 'error',
   ) => {
@@ -16,10 +21,11 @@ export function createRuntimeStateHandlers(deps: any) {
   };
 
   const syncConversationState = async () => {
-    if (!deps.activeConversationId) {
+    const activeConversationId = getActiveConversationId();
+    if (!activeConversationId) {
       return;
     }
-    deps.setMessages(await deps.repo.listMessages(deps.activeConversationId));
+    deps.setMessages(await deps.repo.listMessages(activeConversationId));
     deps.setConversations(await deps.repo.listConversations());
   };
 
@@ -54,13 +60,11 @@ export function createRuntimeStateHandlers(deps: any) {
 
   const createConversation = async (title = '新会话') => {
     markConversationSelectionEpoch();
-    let systemPromptSnapshot = deps.runtimeConfigRef.current.persona.systemPrompt;
-    if (!deps.runtimeConfigHydratedRef.current) {
+    let systemPromptSnapshot = deps.getRuntimeConfig().persona.systemPrompt;
+    if (!deps.getRuntimeConfigHydrated()) {
       try {
         const hydratedRuntimeConfig = await deps.getEffectiveRuntimeConfig();
         systemPromptSnapshot = hydratedRuntimeConfig.persona.systemPrompt;
-        deps.runtimeConfigRef.current = hydratedRuntimeConfig;
-        deps.runtimeConfigHydratedRef.current = true;
         deps.setRuntimeConfig((current: any) =>
           deps.isRuntimeConfigEqual(current, hydratedRuntimeConfig) ? current : hydratedRuntimeConfig,
         );
@@ -96,15 +100,16 @@ export function createRuntimeStateHandlers(deps: any) {
 
   const deleteConversation = async (conversationId: string) => {
     markConversationSelectionEpoch();
+    const currentActiveConversationId = getActiveConversationId();
     const deleted = await deps.repo.deleteConversation(conversationId);
     if (!deleted) {
-      return { ok: false, nextConversationId: deps.activeConversationId ?? null };
+      return { ok: false, nextConversationId: currentActiveConversationId ?? null };
     }
 
     let refreshedConversations = await deps.repo.listConversations();
-    let nextConversationId = deps.activeConversationId ?? null;
+    let nextConversationId = currentActiveConversationId ?? null;
 
-    if (deps.activeConversationId === conversationId) {
+    if (currentActiveConversationId === conversationId) {
       const fallbackConversation = refreshedConversations[0] ?? null;
       if (fallbackConversation) {
         nextConversationId = fallbackConversation.id;
@@ -112,7 +117,7 @@ export function createRuntimeStateHandlers(deps: any) {
         deps.setMessages(await deps.repo.listMessages(fallbackConversation.id));
       } else {
         const created = await deps.repo.createConversation('默认会话', {
-          systemPromptSnapshot: deps.runtimeConfigRef.current.persona.systemPrompt,
+          systemPromptSnapshot: deps.getRuntimeConfig().persona.systemPrompt,
         });
         refreshedConversations = await deps.repo.listConversations();
         nextConversationId = created.id;
@@ -135,7 +140,7 @@ export function createRuntimeStateHandlers(deps: any) {
     text: string,
     options?: { dedupeWindowMs?: number; conversationId?: string | null },
   ) => {
-    const conversationId = options?.conversationId ?? deps.activeConversationId;
+    const conversationId = options?.conversationId ?? getActiveConversationId();
     if (!conversationId) {
       return;
     }
@@ -193,7 +198,6 @@ export function createRuntimeStateHandlers(deps: any) {
   };
 
   const setVoiceInputMutedRuntime = (muted: boolean) => {
-    deps.isVoiceInputMutedRef.current = muted;
     deps.setIsVoiceInputMuted(muted);
   };
 
@@ -214,20 +218,18 @@ export function createRuntimeStateHandlers(deps: any) {
   };
 
   const updateRealtimeCallPhase = (phase: RealtimeCallPhase) => {
-    deps.realtimeCallPhaseRef.current = phase;
     deps.setRealtimeCallPhase(phase);
   };
 
   const updateRealtimeListeningState = (state: RealtimeListeningState) => {
-    if (deps.realtimeListeningStateRef.current === state) {
+    if (deps.getRealtimeListeningState() === state) {
       return;
     }
-    deps.realtimeListeningStateRef.current = state;
     deps.setRealtimeListeningState(state);
   };
 
   const ensureS2SSession = async () => {
-    if (deps.s2sSessionReady) {
+    if (deps.getS2SSessionReady()) {
       return;
     }
     await deps.providers.s2s.connect();
@@ -240,7 +242,7 @@ export function createRuntimeStateHandlers(deps: any) {
     options?: { refreshConversations?: boolean; conversationId?: string | null },
   ) => {
     setRuntimeStatus(status);
-    const targetConversationId = options?.conversationId ?? deps.activeConversationId;
+    const targetConversationId = options?.conversationId ?? getActiveConversationId();
     if (targetConversationId) {
       await deps.repo.updateConversationStatus(targetConversationId, status);
     }
