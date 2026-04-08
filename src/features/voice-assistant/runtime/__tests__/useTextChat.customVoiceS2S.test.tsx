@@ -133,7 +133,7 @@ jest.mock('../../config/env', () => ({
   maskSecret: (value: string) => value,
 }));
 
-jest.mock('../../config/runtimeConfigRepo', () => ({
+jest.mock('../../repo/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
   saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
   buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({

@@ -1,5 +1,9 @@
+import { eq } from 'drizzle-orm';
 import * as AsyncStorageModule from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import type { RuntimeConfigEntry } from '../types/storage';
+import { getVoiceAssistantDb, isVoiceAssistantSqliteAvailable } from './sqlite/client';
+import { runtimeConfigTable } from './sqlite/schema';
 import {
   type RuntimeConfig,
   type RuntimeConfigDraft,
@@ -7,9 +11,10 @@ import {
   normalizeRuntimePersonaConfig,
   readRuntimeConfigFromEnv,
   validateRuntimeConfig,
-} from './runtimeConfig';
+} from '../config/runtimeConfig';
 
-const RUNTIME_CONFIG_STORAGE_KEY = 'voice_assistant.runtime_config.v1';
+const RUNTIME_CONFIG_PUBLIC_ENTRY_KEY = 'runtime_config_public_v1';
+const RUNTIME_CONFIG_FALLBACK_STORAGE_KEY = 'voice_assistant.runtime_config.v1';
 const SECURE_LLM_API_KEY = 'voice_assistant.runtime_config.llm_api_key.v1';
 const SECURE_S2S_ACCESS_TOKEN = 'voice_assistant.runtime_config.s2s_access_token.v1';
 const SECURE_ANDROID_APP_KEY = 'voice_assistant.runtime_config.android_app_key.v1';
@@ -61,13 +66,128 @@ type StoredRuntimeConfig = {
   voice?: RuntimeConfig['voice'];
 };
 
+export interface RuntimeConfigRepo {
+  getEntry(key: string): Promise<RuntimeConfigEntry | null>;
+  upsertEntry(entry: RuntimeConfigEntry): Promise<void>;
+}
+
+const sqliteRuntimeConfigRepo: RuntimeConfigRepo = {
+  async getEntry(key: string) {
+    const database = await getVoiceAssistantDb();
+    const rows = await database
+      .select()
+      .from(runtimeConfigTable)
+      .where(eq(runtimeConfigTable.key, key))
+      .limit(1);
+    const row = rows[0];
+    if (!row) {
+      if (key !== RUNTIME_CONFIG_PUBLIC_ENTRY_KEY) {
+        return null;
+      }
+      const legacyValue = await asyncStorageAdapter.getItem(RUNTIME_CONFIG_FALLBACK_STORAGE_KEY);
+      if (!legacyValue) {
+        return null;
+      }
+      const migrated: RuntimeConfigEntry = {
+        key,
+        valueJson: legacyValue,
+        updatedAt: Date.now(),
+      };
+      try {
+        await database
+          .insert(runtimeConfigTable)
+          .values({
+            key: migrated.key,
+            valueJson: migrated.valueJson,
+            updatedAt: migrated.updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: runtimeConfigTable.key,
+            set: {
+              valueJson: migrated.valueJson,
+              updatedAt: migrated.updatedAt,
+            },
+          });
+      } catch {
+        // Keep read-through behavior even if backfill write fails.
+      }
+      return migrated;
+    }
+    return {
+      key: row.key,
+      valueJson: row.valueJson,
+      updatedAt: row.updatedAt,
+    };
+  },
+  async upsertEntry(entry: RuntimeConfigEntry) {
+    const database = await getVoiceAssistantDb();
+    await database
+      .insert(runtimeConfigTable)
+      .values({
+        key: entry.key,
+        valueJson: entry.valueJson,
+        updatedAt: entry.updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: runtimeConfigTable.key,
+        set: {
+          valueJson: entry.valueJson,
+          updatedAt: entry.updatedAt,
+        },
+      });
+  },
+};
+
+const asyncStorageRuntimeConfigRepo: RuntimeConfigRepo = {
+  async getEntry(key: string) {
+    if (key !== RUNTIME_CONFIG_PUBLIC_ENTRY_KEY) {
+      return null;
+    }
+    const raw = await asyncStorageAdapter.getItem(RUNTIME_CONFIG_FALLBACK_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    return {
+      key: RUNTIME_CONFIG_PUBLIC_ENTRY_KEY,
+      valueJson: raw,
+      updatedAt: Date.now(),
+    };
+  },
+  async upsertEntry(entry: RuntimeConfigEntry) {
+    if (entry.key !== RUNTIME_CONFIG_PUBLIC_ENTRY_KEY) {
+      return;
+    }
+    await asyncStorageAdapter.setItem(RUNTIME_CONFIG_FALLBACK_STORAGE_KEY, entry.valueJson);
+  },
+};
+
+let runtimeConfigRepoOverride: RuntimeConfigRepo | null = null;
+
+function shouldUseSqliteRuntimeConfigRepo(): boolean {
+  if (process.env.NODE_ENV === 'test') {
+    return false;
+  }
+  return isVoiceAssistantSqliteAvailable();
+}
+
+function getNonSensitiveRuntimeConfigRepo(): RuntimeConfigRepo {
+  if (runtimeConfigRepoOverride) {
+    return runtimeConfigRepoOverride;
+  }
+  if (shouldUseSqliteRuntimeConfigRepo()) {
+    return sqliteRuntimeConfigRepo;
+  }
+  return asyncStorageRuntimeConfigRepo;
+}
+
 async function readStoredRuntimeConfig(): Promise<StoredRuntimeConfig> {
   try {
-    const raw = await asyncStorageAdapter.getItem(RUNTIME_CONFIG_STORAGE_KEY);
-    if (!raw) {
+    const repo = getNonSensitiveRuntimeConfigRepo();
+    const entry = await repo.getEntry(RUNTIME_CONFIG_PUBLIC_ENTRY_KEY);
+    if (!entry?.valueJson) {
       return {};
     }
-    const parsed = JSON.parse(raw) as StoredRuntimeConfig;
+    const parsed = JSON.parse(entry.valueJson) as StoredRuntimeConfig;
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
@@ -75,7 +195,12 @@ async function readStoredRuntimeConfig(): Promise<StoredRuntimeConfig> {
 }
 
 async function writeStoredRuntimeConfig(value: StoredRuntimeConfig): Promise<void> {
-  await asyncStorageAdapter.setItem(RUNTIME_CONFIG_STORAGE_KEY, JSON.stringify(value));
+  const repo = getNonSensitiveRuntimeConfigRepo();
+  await repo.upsertEntry({
+    key: RUNTIME_CONFIG_PUBLIC_ENTRY_KEY,
+    valueJson: JSON.stringify(value),
+    updatedAt: Date.now(),
+  });
 }
 
 async function readSecureValue(key: string): Promise<string> {
@@ -176,8 +301,13 @@ export function __setRuntimeConfigRepoAdaptersForTest(
   overrides?: Partial<{
     asyncStorage: typeof defaultAsyncStorageAdapter;
     secureStore: typeof defaultSecureStoreAdapter;
+    runtimeConfigRepo: RuntimeConfigRepo | null;
   }>,
 ): void {
   asyncStorageAdapter = overrides?.asyncStorage ?? defaultAsyncStorageAdapter;
   secureStoreAdapter = overrides?.secureStore ?? defaultSecureStoreAdapter;
+  runtimeConfigRepoOverride =
+    overrides && Object.prototype.hasOwnProperty.call(overrides, 'runtimeConfigRepo')
+      ? (overrides.runtimeConfigRepo ?? null)
+      : null;
 }

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ConversationRepo } from '../repo/conversationRepo';
 import type { RuntimeConfig } from '../config/runtimeConfig';
-import { getEffectiveRuntimeConfig } from '../config/runtimeConfigRepo';
+import { getEffectiveRuntimeConfig } from '../repo/runtimeConfigRepo';
 import { isCompleteLLMConfig } from '../config/runtimeConfig';
 import { isRuntimeConfigEqual } from '../config/runtimeConfig';
 import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';

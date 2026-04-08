@@ -189,6 +189,9 @@ export function createRuntimeStateHandlers(deps: any) {
     deps.androidDialogClientTtsSelectionPromiseRef.current = null;
     deps.androidDialogClientTtsSelectionReadyRef.current = false;
     deps.androidCustomClientTtsStreamStartedRef.current = false;
+    if (typeof deps.setActiveVoiceSessionId === 'function') {
+      deps.setActiveVoiceSessionId(null);
+    }
     deps.setIsVoiceActive(false);
     updateRealtimeListeningState('ready');
     updateRealtimeCallPhase('idle');

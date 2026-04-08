@@ -21,7 +21,7 @@ import {
   buildRuntimeConfigForSave,
   saveRuntimeConfig as persistRuntimeConfig,
   validateRuntimeConfigForSave,
-} from '../config/runtimeConfigRepo';
+} from '../repo/runtimeConfigRepo';
 import { resolveConversationSystemPrompt, withTimeout } from './useTextChat.shared';
 import type { GenerateReplyInput, TextRoundInput } from './useTextChat.contracts';
 

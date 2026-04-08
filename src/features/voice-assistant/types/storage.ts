@@ -44,3 +44,9 @@ export type VoiceSessionEvent = {
   payloadJson: string | null;
   createdAt: number;
 };
+
+export type RuntimeConfigEntry = {
+  key: string;
+  valueJson: string;
+  updatedAt: number;
+};

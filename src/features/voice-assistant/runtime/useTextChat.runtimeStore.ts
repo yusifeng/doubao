@@ -14,6 +14,7 @@ type VoiceAssistantRuntimeState = {
   activeConversationId: string | null;
   messages: Message[];
   isVoiceActive: boolean;
+  activeVoiceSessionId: string | null;
   isVoiceInputMuted: boolean;
   realtimeCallPhase: RealtimeCallPhase;
   realtimeListeningState: RealtimeListeningState;
@@ -32,6 +33,7 @@ export type VoiceAssistantRuntimeStore = VoiceAssistantRuntimeState & {
   setActiveConversationId: (next: StateSetter<string | null>) => void;
   setMessages: (next: StateSetter<Message[]>) => void;
   setIsVoiceActive: (next: StateSetter<boolean>) => void;
+  setActiveVoiceSessionId: (next: StateSetter<string | null>) => void;
   setIsVoiceInputMuted: (next: StateSetter<boolean>) => void;
   setRealtimeCallPhase: (next: StateSetter<RealtimeCallPhase>) => void;
   setRealtimeListeningState: (next: StateSetter<RealtimeListeningState>) => void;
@@ -62,6 +64,7 @@ export function createVoiceAssistantRuntimeStore(
     activeConversationId: null,
     messages: [],
     isVoiceActive: false,
+    activeVoiceSessionId: null,
     isVoiceInputMuted: false,
     realtimeCallPhase: 'idle',
     realtimeListeningState: 'ready',
@@ -97,6 +100,10 @@ export function createVoiceAssistantRuntimeStore(
     setIsVoiceActive: (next) =>
       set((current) => ({
         isVoiceActive: resolveSetter(current.isVoiceActive, next),
+      })),
+    setActiveVoiceSessionId: (next) =>
+      set((current) => ({
+        activeVoiceSessionId: resolveSetter(current.activeVoiceSessionId, next),
       })),
     setIsVoiceInputMuted: (next) =>
       set((current) => ({

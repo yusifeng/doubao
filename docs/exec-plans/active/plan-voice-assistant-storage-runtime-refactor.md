@@ -21,12 +21,15 @@
 - [x] 新增 repo 契约：`SessionRepo`、`MessageRepo`、`VoiceSessionLogRepo`
 - [x] 新增 SQLite repo 实现
 - [x] 将现有 `PersistentConversationRepo` 切换到底层 SQLite（接口保持不变，非 SQLite 运行时维持 AsyncStorage 兼容回退）
+- [x] `RuntimeConfigRepo` 契约与实现完成收口（非敏感配置走 SQLite `runtime_config`，敏感配置继续 SecureStore）
+- [x] `voice_session` / `voice_session_event` 完成 runtime 写链路接线（start/phase/event）
 
 ### Phase 2: Runtime Store Introduction
 
 - [x] 引入 store lib（Zustand），仅托管 runtime 编排态
 - [x] 清理 `useTextChat` 业务态 `ref`，保留副作用句柄型 `ref`
 - [x] 将会话状态迁移为 reducer/store 单一路径写入
+- [x] 对外 Hook 可观测字段补齐：`activeVoiceSessionId?: string`（默认可选兼容）
 
 ### Phase 3: Debt Cleanup + UX Regression Fixes
 
@@ -34,9 +37,15 @@
 - [x] 收敛消息草稿渲染路径，解决首帧闪烁
 - [x] 统一错误与故障签名，补齐 runbook
 
+### Phase 4: Closure (Plan Conformance)
+
+- [ ] 补齐数据层契约测试：`chat_session/chat_message`（排序/级联/幂等）+ `voice_session/voice_session_event`（记录完整性）+ `runtime_config`（非敏感 SQLite + 敏感 SecureStore 协同）
+  当前状态：`voice_session/voice_session_event` 与 `runtime_config` 契约用例已补齐，`chat_session/chat_message` 的完整 SQLite 契约测试仍需继续补齐。
+- [ ] 文档与计划闭环：将“已完成/未完成”状态与代码事实对齐，不保留名义完成项
+
 ## 验收标准
 
 - `pnpm exec tsc --noEmit` 通过
-- 相关测试通过（优先 runtime/repo 目标测试）
+- 相关测试通过（包含 runtime/repo/config 目标测试）
 - Android 可编译：`./android/gradlew -p android :app:compileDebugKotlin`
 - 文档与代码同步更新（包含 `docs/commit-history.md`）

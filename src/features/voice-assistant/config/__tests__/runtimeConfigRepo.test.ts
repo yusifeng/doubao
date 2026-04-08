@@ -14,7 +14,7 @@ import {
   getEffectiveRuntimeConfig,
   saveRuntimeConfig,
   validateRuntimeConfigForSave,
-} from '../runtimeConfigRepo';
+} from '../../repo/runtimeConfigRepo';
 import { readRuntimeConfigFromEnv } from '../runtimeConfig';
 import { VOICE_ASSISTANT_S2S_WS_URL } from '../constants';
 
@@ -179,6 +179,52 @@ describe('runtimeConfigRepo', () => {
       'voice_assistant.runtime_config.android_app_key.v1',
       'save-app-key',
     );
+  });
+
+  it('supports non-sensitive read/write through RuntimeConfigRepo contract', async () => {
+    const memoryEntry = {
+      key: 'runtime_config_public_v1',
+      valueJson: JSON.stringify({
+        replyChainMode: 'custom_llm',
+        llm: {
+          baseUrl: 'https://repo.llm/v1',
+          model: 'repo-model',
+          provider: 'repo-provider',
+        },
+      }),
+      updatedAt: Date.now(),
+    };
+    const mockRuntimeConfigRepo = {
+      getEntry: jest.fn(async (key: string) => (key === memoryEntry.key ? memoryEntry : null)),
+      upsertEntry: jest.fn(async (entry: { key: string; valueJson: string; updatedAt: number }) => {
+        memoryEntry.key = entry.key;
+        memoryEntry.valueJson = entry.valueJson;
+        memoryEntry.updatedAt = entry.updatedAt;
+      }),
+    };
+
+    __setRuntimeConfigRepoAdaptersForTest({
+      asyncStorage: mockAsyncStorage,
+      secureStore: mockSecureStore,
+      runtimeConfigRepo: mockRuntimeConfigRepo,
+    });
+
+    const loaded = await getEffectiveRuntimeConfig();
+    expect(loaded.replyChainMode).toBe('custom_llm');
+    expect(loaded.llm.baseUrl).toBe('https://repo.llm/v1');
+    expect(mockRuntimeConfigRepo.getEntry).toHaveBeenCalledWith('runtime_config_public_v1');
+    expect(mockAsyncStorage.getItem).not.toHaveBeenCalled();
+
+    const nextConfig = buildRuntimeConfigForSave(loaded, {
+      replyChainMode: 'official_s2s',
+      s2s: {
+        appId: 'repo-app-id',
+      },
+    });
+
+    await saveRuntimeConfig(nextConfig);
+    expect(mockRuntimeConfigRepo.upsertEntry).toHaveBeenCalledTimes(1);
+    expect(mockAsyncStorage.setItem).not.toHaveBeenCalled();
   });
 
   it('validates required fields for custom_llm mode', () => {

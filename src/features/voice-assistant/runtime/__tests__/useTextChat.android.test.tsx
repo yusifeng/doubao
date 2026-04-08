@@ -144,7 +144,7 @@ jest.mock('../../config/env', () => ({
   maskSecret: (value: string) => value,
 }));
 
-jest.mock('../../config/runtimeConfigRepo', () => ({
+jest.mock('../../repo/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
   saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
   buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
@@ -308,6 +308,51 @@ describe('useTextChat android dialog sdk flow', () => {
     await waitFor(() => {
       expect(result.current.messages.some((message) => message.role === 'assistant' && message.content === '这是服务端回复')).toBe(true);
       expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
+  it('tracks activeVoiceSessionId across android dialog lifecycle events', async () => {
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    expect(result.current.activeVoiceSessionId).toBeNull();
+
+    await act(async () => {
+      emitEngineStart('voice-session-lifecycle-active');
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeVoiceSessionId).toEqual(expect.any(String));
+    });
+    const runtimeVoiceSessionId = result.current.activeVoiceSessionId;
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'session_ready',
+        sessionId: 'voice-session-lifecycle-active',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeVoiceSessionId).toBe(runtimeVoiceSessionId);
+    });
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'engine_stop',
+        sessionId: 'voice-session-lifecycle-active',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.activeVoiceSessionId).toBeNull();
     });
   });
 
@@ -563,7 +608,7 @@ describe('useTextChat android dialog sdk flow', () => {
   });
 
   it('suppresses official partial text rendering in force_non_stream mode but keeps final fallback', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({

@@ -132,7 +132,7 @@ jest.mock('../../config/env', () => ({
   maskSecret: (value: string) => value,
 }));
 
-jest.mock('../../config/runtimeConfigRepo', () => ({
+jest.mock('../../repo/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => runtimeConfig),
   saveRuntimeConfig: jest.fn(async (nextConfig) => nextConfig),
   buildRuntimeConfigForSave: jest.fn((currentConfig, draft) => ({
@@ -147,7 +147,7 @@ describe('useTextChat realtime lifecycle lock', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockImplementation(async () => runtimeConfig);
@@ -244,7 +244,7 @@ describe('useTextChat realtime lifecycle lock', () => {
   });
 
   it('blocks text send when custom_llm config is incomplete and does not fallback to official/local reply', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({
@@ -283,7 +283,7 @@ describe('useTextChat realtime lifecycle lock', () => {
   });
 
   it('uses official_s2s partial stream text as final fallback when final snapshot is missing', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({
@@ -327,7 +327,7 @@ describe('useTextChat realtime lifecycle lock', () => {
   });
 
   it('uses hydrated persona snapshot when creating conversation before bootstrap hydration', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     const delayedHydration = createDeferred<typeof runtimeConfig>();
@@ -368,7 +368,7 @@ describe('useTextChat realtime lifecycle lock', () => {
   });
 
   it('does not create default conversation after hydration if user already created one', async () => {
-    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+    const runtimeConfigRepoModule = jest.requireMock('../../repo/runtimeConfigRepo') as {
       getEffectiveRuntimeConfig: jest.Mock;
     };
     const delayedHydration = createDeferred<typeof runtimeConfig>();

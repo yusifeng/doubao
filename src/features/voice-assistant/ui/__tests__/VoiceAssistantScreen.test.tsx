@@ -3,7 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { UseTextChatResult } from '../../runtime/useTextChat';
 import { VoiceAssistantScreen } from '../VoiceAssistantScreen';
 
-jest.mock('../../config/runtimeConfigRepo', () => ({
+jest.mock('../../repo/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => ({
     replyChainMode: 'official_s2s',
     replyStreamMode: 'auto',

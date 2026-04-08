@@ -2,11 +2,16 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
 import { useStore } from 'zustand';
 import type { Conversation, Message } from '../types/model';
+import type { VoiceSession } from '../types/storage';
 import { InMemoryConversationRepo } from '../repo/conversationRepo';
 import { PersistentConversationRepo } from '../repo/persistentConversationRepo';
+import { InMemoryVoiceSessionLogRepo } from '../repo/inMemoryVoiceSessionLogRepo';
+import { PersistentVoiceSessionLogRepo } from '../repo/persistentVoiceSessionLogRepo';
+import type { VoiceSessionLogRepo } from '../repo/voiceSessionLogRepo';
+import { generateUuidV7Like } from '../repo/sqlite/id';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
 import { readVoicePipelineMode } from '../config/env';
-import { getEffectiveRuntimeConfig } from '../config/runtimeConfigRepo';
+import { getEffectiveRuntimeConfig } from '../repo/runtimeConfigRepo';
 import {
   isCompleteLLMConfig,
   isRuntimeConfigEqual,
@@ -89,6 +94,7 @@ export type UseTextChatResult = {
   deleteConversation?: (conversationId: string) => Promise<{ ok: boolean; nextConversationId: string | null }>;
   sendText: (text: string) => Promise<void>;
   isVoiceActive: boolean;
+  activeVoiceSessionId?: string | null;
   supportsVoiceInputMute: boolean;
   isVoiceInputMuted: boolean;
   toggleVoice: () => Promise<void>;
@@ -111,11 +117,23 @@ function mergeAssistantDraft(currentDraft: string, incomingText: string): string
   return mergeOfficialS2SReplyDraft(currentDraft, incomingText);
 }
 
+function serializeDialogEventForVoiceSessionLog(event: DialogEngineEvent): string | null {
+  try {
+    return JSON.stringify(event);
+  } catch {
+    return null;
+  }
+}
+
 export function useTextChat(): UseTextChatResult {
   const isTestEnv = process.env.NODE_ENV === 'test';
   const PENDING_REPLY_RENDER_THROTTLE_MS = 48;
   const repo = useMemo(
     () => (isTestEnv ? new InMemoryConversationRepo() : new PersistentConversationRepo()),
+    [isTestEnv],
+  );
+  const voiceSessionLogRepo = useMemo<VoiceSessionLogRepo>(
+    () => (isTestEnv ? new InMemoryVoiceSessionLogRepo() : new PersistentVoiceSessionLogRepo()),
     [isTestEnv],
   );
   const runtimeStoreRef = useRef<ReturnType<typeof createVoiceAssistantRuntimeStore> | null>(null);
@@ -130,6 +148,7 @@ export function useTextChat(): UseTextChatResult {
   const activeConversationId = useStore(runtimeStore, (state) => state.activeConversationId);
   const messages = useStore(runtimeStore, (state) => state.messages);
   const isVoiceActive = useStore(runtimeStore, (state) => state.isVoiceActive);
+  const activeVoiceSessionId = useStore(runtimeStore, (state) => state.activeVoiceSessionId);
   const isVoiceInputMuted = useStore(runtimeStore, (state) => state.isVoiceInputMuted);
   const realtimeCallPhase = useStore(runtimeStore, (state) => state.realtimeCallPhase);
   const realtimeListeningState = useStore(runtimeStore, (state) => state.realtimeListeningState);
@@ -144,6 +163,7 @@ export function useTextChat(): UseTextChatResult {
   const setActiveConversationId = useStore(runtimeStore, (state) => state.setActiveConversationId);
   const setMessages = useStore(runtimeStore, (state) => state.setMessages);
   const setIsVoiceActive = useStore(runtimeStore, (state) => state.setIsVoiceActive);
+  const setActiveVoiceSessionId = useStore(runtimeStore, (state) => state.setActiveVoiceSessionId);
   const setIsVoiceInputMuted = useStore(runtimeStore, (state) => state.setIsVoiceInputMuted);
   const setRealtimeCallPhase = useStore(runtimeStore, (state) => state.setRealtimeCallPhase);
   const setRealtimeListeningState = useStore(runtimeStore, (state) => state.setRealtimeListeningState);
@@ -236,6 +256,20 @@ export function useTextChat(): UseTextChatResult {
   const pendingAssistantReplyLastCommitAtRef = useRef(0);
   const lastAssistantAudioHintRef = useRef<{ content: string; at: number } | null>(null);
   const conversationSelectionEpochRef = useRef(0);
+  const activeVoiceSessionIdRef = useRef<string | null>(null);
+  const lastVoiceSessionIdRef = useRef<string | null>(null);
+  const voiceSessionLogQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const setActiveVoiceSessionIdRuntime = useCallback(
+    (next: string | null) => {
+      if (next) {
+        lastVoiceSessionIdRef.current = next;
+      }
+      activeVoiceSessionIdRef.current = next;
+      setActiveVoiceSessionId(next);
+    },
+    [setActiveVoiceSessionId],
+  );
 
   const commitPendingAssistantReply = useCallback((value: string) => {
     pendingAssistantReplyLastCommitAtRef.current = Date.now();
@@ -275,6 +309,160 @@ export function useTextChat(): UseTextChatResult {
     commitPendingAssistantReply,
     getPendingAssistantReply,
   ]);
+
+  useEffect(() => {
+    activeVoiceSessionIdRef.current = activeVoiceSessionId;
+  }, [activeVoiceSessionId]);
+
+  const enqueueVoiceSessionLogWrite = useCallback(
+    (task: () => Promise<void>) => {
+      voiceSessionLogQueueRef.current = voiceSessionLogQueueRef.current
+        .catch(() => undefined)
+        .then(task)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          providers.observability.log('warn', 'voice session log write failed', { message });
+        });
+    },
+    [providers.observability],
+  );
+
+  const appendVoiceSessionRuntimeEvent = useCallback(
+    (event: DialogEngineEvent) => {
+      const voiceSessionId = activeVoiceSessionIdRef.current;
+      if (!voiceSessionId) {
+        return;
+      }
+      const payloadJson = serializeDialogEventForVoiceSessionLog(event);
+      enqueueVoiceSessionLogWrite(async () => {
+        await voiceSessionLogRepo.appendEvent({
+          voiceSessionId,
+          eventType: event.type,
+          turnId: typeof event.turnIndex === 'number' ? event.turnIndex : null,
+          traceId: event.traceId ?? null,
+          payloadJson,
+          createdAt: Date.now(),
+        });
+      });
+    },
+    [enqueueVoiceSessionLogWrite, voiceSessionLogRepo],
+  );
+
+  const updateVoiceSessionPhaseRuntime = useCallback(
+    (
+      phase: VoiceSession['phase'],
+      options?: { endedAt?: number | null; errorCode?: string | null; errorMessage?: string | null },
+    ) => {
+      const voiceSessionId = activeVoiceSessionIdRef.current;
+      if (!voiceSessionId) {
+        return;
+      }
+      enqueueVoiceSessionLogWrite(async () => {
+        await voiceSessionLogRepo.updateSessionPhase(voiceSessionId, phase, options);
+      });
+    },
+    [enqueueVoiceSessionLogWrite, voiceSessionLogRepo],
+  );
+
+  const handleVoiceSessionStarted = useCallback(
+    (event: DialogEngineEvent) => {
+      const chatSessionId = androidDialogConversationIdRef.current ?? getActiveConversationId();
+      if (!chatSessionId) {
+        return;
+      }
+      const voiceSessionId = generateUuidV7Like();
+      const interactionMode = androidDialogModeRef.current === 'voice' ? 'voice' : 'text';
+      const payloadJson = serializeDialogEventForVoiceSessionLog(event);
+      setActiveVoiceSessionIdRuntime(voiceSessionId);
+      enqueueVoiceSessionLogWrite(async () => {
+        await voiceSessionLogRepo.startSession({
+          id: voiceSessionId,
+          chatSessionId,
+          sdkSessionId: event.sessionId ?? null,
+          interactionMode,
+          replyChain: replyChainMode,
+          startedAt: Date.now(),
+        });
+        await voiceSessionLogRepo.appendEvent({
+          voiceSessionId,
+          eventType: event.type,
+          turnId: typeof event.turnIndex === 'number' ? event.turnIndex : null,
+          traceId: event.traceId ?? null,
+          payloadJson,
+          createdAt: Date.now(),
+        });
+      });
+    },
+    [
+      enqueueVoiceSessionLogWrite,
+      getActiveConversationId,
+      replyChainMode,
+      setActiveVoiceSessionIdRuntime,
+      voiceSessionLogRepo,
+    ],
+  );
+
+  const handleVoiceSessionReady = useCallback(
+    (event: DialogEngineEvent) => {
+      updateVoiceSessionPhaseRuntime('ready');
+      appendVoiceSessionRuntimeEvent(event);
+    },
+    [appendVoiceSessionRuntimeEvent, updateVoiceSessionPhaseRuntime],
+  );
+
+  const handleVoiceSessionStopped = useCallback(
+    (event: DialogEngineEvent) => {
+      const voiceSessionId = activeVoiceSessionIdRef.current ?? lastVoiceSessionIdRef.current;
+      if (!voiceSessionId) {
+        return;
+      }
+      const payloadJson = serializeDialogEventForVoiceSessionLog(event);
+      const endedAt = Date.now();
+      lastVoiceSessionIdRef.current = null;
+      setActiveVoiceSessionIdRuntime(null);
+      enqueueVoiceSessionLogWrite(async () => {
+        await voiceSessionLogRepo.updateSessionPhase(voiceSessionId, 'stopped', { endedAt });
+        await voiceSessionLogRepo.appendEvent({
+          voiceSessionId,
+          eventType: event.type,
+          turnId: typeof event.turnIndex === 'number' ? event.turnIndex : null,
+          traceId: event.traceId ?? null,
+          payloadJson,
+          createdAt: endedAt,
+        });
+      });
+    },
+    [enqueueVoiceSessionLogWrite, setActiveVoiceSessionIdRuntime, voiceSessionLogRepo],
+  );
+
+  const handleVoiceSessionError = useCallback(
+    (event: DialogEngineEvent, message: string, errorCode?: number) => {
+      const voiceSessionId = activeVoiceSessionIdRef.current ?? lastVoiceSessionIdRef.current;
+      if (!voiceSessionId) {
+        return;
+      }
+      const payloadJson = serializeDialogEventForVoiceSessionLog(event);
+      const endedAt = Date.now();
+      lastVoiceSessionIdRef.current = null;
+      setActiveVoiceSessionIdRuntime(null);
+      enqueueVoiceSessionLogWrite(async () => {
+        await voiceSessionLogRepo.updateSessionPhase(voiceSessionId, 'error', {
+          endedAt,
+          errorCode: typeof errorCode === 'number' ? String(errorCode) : null,
+          errorMessage: message,
+        });
+        await voiceSessionLogRepo.appendEvent({
+          voiceSessionId,
+          eventType: event.type,
+          turnId: typeof event.turnIndex === 'number' ? event.turnIndex : null,
+          traceId: event.traceId ?? null,
+          payloadJson,
+          createdAt: endedAt,
+        });
+      });
+    },
+    [enqueueVoiceSessionLogWrite, setActiveVoiceSessionIdRuntime, voiceSessionLogRepo],
+  );
 
   useEffect(
     () => () => {
@@ -325,6 +513,7 @@ export function useTextChat(): UseTextChatResult {
         setRealtimeCallPhase,
         setRealtimeListeningState,
         setIsVoiceActive,
+        setActiveVoiceSessionId: setActiveVoiceSessionIdRuntime,
         setIsVoiceInputMuted,
         setS2SSessionReady,
         realtimeCallGenerationRef,
@@ -381,6 +570,7 @@ export function useTextChat(): UseTextChatResult {
       providers,
       replyChainMode,
       repo,
+      setActiveVoiceSessionIdRuntime,
       setRuntimeStatus,
     ],
   );
@@ -725,9 +915,15 @@ export function useTextChat(): UseTextChatResult {
         recoverFromPlatformReplyLeakInCustomMode,
         mergeAssistantDraft,
         getPendingAssistantReply,
+        onVoiceSessionStarted: handleVoiceSessionStarted,
+        onVoiceSessionReady: handleVoiceSessionReady,
+        onVoiceSessionStopped: handleVoiceSessionStopped,
+        onVoiceSessionError: handleVoiceSessionError,
+        onVoiceSessionEvent: appendVoiceSessionRuntimeEvent,
       }),
     [
       activeConversationId,
+      appendVoiceSessionRuntimeEvent,
       awaitAndroidClientTtsSelectionForTurn,
       beginAndroidClientTtsSelectionForTurn,
       buildDialogLogContext,
@@ -738,6 +934,10 @@ export function useTextChat(): UseTextChatResult {
       getIsVoiceInputMuted,
       getPendingAssistantReply,
       getRealtimeCallPhase,
+      handleVoiceSessionError,
+      handleVoiceSessionReady,
+      handleVoiceSessionStarted,
+      handleVoiceSessionStopped,
       maybeInterruptOnBargeIn,
       mergeTurnTraceFromDialogEvent,
       providers,
@@ -1060,6 +1260,7 @@ export function useTextChat(): UseTextChatResult {
     deleteConversation,
     sendText,
     isVoiceActive,
+    activeVoiceSessionId,
     supportsVoiceInputMute,
     isVoiceInputMuted,
     toggleVoice,

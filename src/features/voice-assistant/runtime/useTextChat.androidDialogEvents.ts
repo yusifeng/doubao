@@ -31,6 +31,10 @@ type LifecycleDeps = {
   setIsVoiceActive: (value: boolean) => void;
   updateConversationRuntimeStatus: (status: any, options?: { refreshConversations?: boolean }) => Promise<void>;
   logIgnoredAndroidDialogEvent: (reason: string) => void;
+  onVoiceSessionStarted?: (event: DialogEngineEvent) => void;
+  onVoiceSessionReady?: (event: DialogEngineEvent) => void;
+  onVoiceSessionStopped?: (event: DialogEngineEvent) => void;
+  onVoiceSessionError?: (event: DialogEngineEvent, message: string, errorCode?: number) => void;
 };
 
 const MAX_PLATFORM_FINAL_TEXT_CACHE_SIZE = 120;
@@ -141,6 +145,7 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
         type: 'session_started',
         sdkSessionId: event.sessionId ?? null,
       });
+      deps.onVoiceSessionStarted?.(event);
       deps.setConnectivityHint('Android Dialog SDK 引擎已启动');
       return true;
     case 'session_ready':
@@ -153,17 +158,35 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
         sdkSessionId: event.sessionId ?? null,
         dialogId: event.dialogId ?? event.sessionId ?? null,
       });
+      deps.onVoiceSessionReady?.(event);
       return true;
     case 'engine_stop':
-      if (event.sessionId) {
-        deps.rememberRetiredAndroidDialogSession(event.sessionId);
-      }
+      const hadActiveSessionId = Boolean(deps.androidDialogSessionIdRef.current);
       if (
         event.sessionId &&
-        (!deps.androidDialogSessionIdRef.current || event.sessionId !== deps.androidDialogSessionIdRef.current)
+        deps.androidDialogSessionIdRef.current &&
+        event.sessionId !== deps.androidDialogSessionIdRef.current
       ) {
         deps.logIgnoredAndroidDialogEvent('lifecycle_session_mismatch');
         return true;
+      }
+      const isDuplicateRetiredStop =
+        Boolean(event.sessionId) &&
+        !hadActiveSessionId &&
+        deps.androidRetiredSessionIdsRef.current.includes(event.sessionId as string);
+      if (
+        isDuplicateRetiredStop
+      ) {
+        deps.onVoiceSessionStopped?.(event);
+        deps.logIgnoredAndroidDialogEvent('retired_session_engine_stop');
+        return true;
+      }
+      if (event.sessionId) {
+        deps.rememberRetiredAndroidDialogSession(event.sessionId);
+      }
+      const logStopBeforeTeardown = Boolean(event.sessionId && !hadActiveSessionId);
+      if (logStopBeforeTeardown) {
+        deps.onVoiceSessionStopped?.(event);
       }
       deps.androidDialogSessionIdRef.current = null;
       deps.androidDialogConversationIdRef.current = null;
@@ -183,6 +206,9 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
       deps.androidReplyGenerationRef.current += 1;
       deps.dispatchDialogOrchestrator({ type: 'generation_bump_reply' });
       deps.dispatchDialogOrchestrator({ type: 'session_stopped' });
+      if (!logStopBeforeTeardown) {
+        deps.onVoiceSessionStopped?.(event);
+      }
       deps.resetRealtimeCallState();
       void deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
       return true;
@@ -204,6 +230,7 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
         ),
       );
       deps.dispatchDialogOrchestrator({ type: 'session_error' });
+      deps.onVoiceSessionError?.(event, message, event.errorCode);
       void deps.updateConversationRuntimeStatus('error', { refreshConversations: true });
       if (deps.voiceLoopActiveRef.current) {
         deps.updateRealtimeCallPhase('idle');
@@ -761,6 +788,10 @@ export function createAndroidDialogEventHandler(deps: any) {
         setIsVoiceActive: deps.setIsVoiceActive,
         updateConversationRuntimeStatus: deps.updateConversationRuntimeStatus,
         logIgnoredAndroidDialogEvent,
+        onVoiceSessionStarted: deps.onVoiceSessionStarted,
+        onVoiceSessionReady: deps.onVoiceSessionReady,
+        onVoiceSessionStopped: deps.onVoiceSessionStopped,
+        onVoiceSessionError: deps.onVoiceSessionError,
       })
     ) {
       deps.mergeTurnTraceFromDialogEvent(event);
@@ -775,6 +806,7 @@ export function createAndroidDialogEventHandler(deps: any) {
       return;
     }
     deps.mergeTurnTraceFromDialogEvent(event);
+    deps.onVoiceSessionEvent?.(event);
     handleAndroidDialogPayloadEvent(event, semanticEvent, deps);
   };
 }

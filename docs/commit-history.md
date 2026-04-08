@@ -1283,3 +1283,52 @@
   - Pending/final de-dup currently compares normalized text against last persisted assistant message; if future message ordering semantics change, this heuristic should be revalidated.
 - Rollback:
   - Revert the files above to restore placeholder-first pending rendering and previous pending/final list merge behavior.
+
+## 2026-04-09 04:21 (CST) - refactor(voice-chat): close runtime config and voice session wiring
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `src/features/voice-assistant/config/runtimeConfigRepo.ts` (deleted)
+  - `src/features/voice-assistant/repo/runtimeConfigRepo.ts`
+  - `src/features/voice-assistant/repo/inMemoryVoiceSessionLogRepo.ts`
+  - `src/features/voice-assistant/repo/persistentVoiceSessionLogRepo.ts`
+  - `src/features/voice-assistant/repo/__tests__/voiceSessionLogRepo.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeStore.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.runtimeState.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.effects.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.androidDialogEvents.test.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `src/features/voice-assistant/types/storage.ts`
+- Summary:
+  - Migrated runtime config persistence entrypoint from `config` layer to `repo/runtimeConfigRepo` and updated all runtime/UI tests to mock the new path.
+  - Completed `runtime_config` non-sensitive SQLite persistence path and kept sensitive fields in SecureStore; added SQLite read-through from legacy AsyncStorage key to avoid losing existing saved config on upgrade.
+  - Added `VoiceSessionLogRepo` concrete implementations (in-memory + persistent) and wired Android dialog lifecycle/payload events to `voice_session` and `voice_session_event` writes via serialized write queue.
+  - Added runtime observable field `activeVoiceSessionId` to store/hook return and reset path, so UI/runtime can track current voice session explicitly.
+  - Added lifecycle guard regression tests for `engine_stop` ordering and retired-session handling to prevent stale stop events from incorrectly tearing down new start attempts.
+  - Updated active refactor plan progress: `RuntimeConfigRepo` 收口、`voice_session/event` runtime 接线、`activeVoiceSessionId` 对外字段均已完成；数据层契约测试项保留 `chat_session/chat_message` SQLite 专项待补。
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.androidDialogEvents.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/repo/__tests__/voiceSessionLogRepo.test.ts src/features/voice-assistant/config/__tests__/runtimeConfigRepo.test.ts` (pass)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass, no actionable findings)
+- Risk:
+  - Voice session logging currently依赖 runtime 生命周期事件顺序；极端乱序场景仍可能出现事件落库延迟，需要继续观测真机日志。
+  - Runtime config 读透迁移发生在首次 SQLite 读路径，若设备本地存储异常会退回默认配置并提示用户重新配置。
+  - `activeVoiceSessionId` 暴露后，UI 若未来直接依赖该字段驱动复杂流程，需保持与 `voiceCallPhase` 语义一致性。
+- Rollback:
+  - Revert the scope files above to restore pre-refactor runtime config module path and remove voice-session runtime logging wiring / `activeVoiceSessionId` exposure.
