@@ -26,6 +26,27 @@
 
 ## Entries
 
+## 2026-04-08 17:31 (CST) - feat(custom-llm): stream replies with mode fallback
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/core/providers/reply/openaiCompatible.ts`
+  - `src/core/providers/reply/__tests__/openaiCompatible.test.ts`
+  - `src/features/voice-assistant/runtime/providers.ts`
+  - `src/features/voice-assistant/runtime/__tests__/providers.test.ts`
+- Summary:
+  - Extended openai-compatible reply provider with stream strategy handling (`auto`, `force_stream`, `force_non_stream`).
+  - Implemented `auto` fallback semantics: pre-chunk stream failures degrade to non-stream generate; post-chunk failures preserve already streamed partial output.
+  - Wired runtime provider creation to pass configured stream mode into custom LLM provider instances.
+  - Added provider tests for stream success, forced non-stream, auto fallback, and strict stream mode behavior.
+- Tests:
+  - `pnpm exec jest src/core/providers/reply/__tests__/openaiCompatible.test.ts src/features/voice-assistant/runtime/__tests__/providers.test.ts` (pass)
+- Risk:
+  - Different OpenAI-compatible backends surface stream termination errors differently; partial-output preservation now prioritizes continuity over strict error bubbling in `auto`.
+- Rollback:
+  - Revert the scoped provider/runtime/test files above to return to prior always-stream behavior.
+
 ## 2026-04-08 17:25 (CST) - feat(settings): add reply stream mode control
 
 - Commit: pending

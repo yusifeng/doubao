@@ -1,11 +1,15 @@
-import type { LLMEnvConfig } from '../../../features/voice-assistant/config/env';
+import type { LLMEnvConfig, ReplyStreamMode } from '../../../features/voice-assistant/config/env';
 import type { ReplyGenerationInput, ReplyProvider } from './types';
 
+type OpenAICompatibleReplyConfig = LLMEnvConfig & {
+  streamMode?: ReplyStreamMode;
+};
+
 export class OpenAICompatibleReplyProvider implements ReplyProvider {
-  constructor(private readonly config: LLMEnvConfig) {}
+  constructor(private readonly config: OpenAICompatibleReplyConfig) {}
 
   async *generateReplyStream(input: ReplyGenerationInput): AsyncIterable<string> {
-    const { generateText } = require('ai') as typeof import('ai');
+    const { generateText, streamText } = require('ai') as typeof import('ai');
     const { createOpenAI } = require('@ai-sdk/openai') as typeof import('@ai-sdk/openai');
     const traceId = typeof input.trace?.traceId === 'string' ? input.trace.traceId.trim() : '';
     const traceFetch = traceId
@@ -25,7 +29,8 @@ export class OpenAICompatibleReplyProvider implements ReplyProvider {
       fetch: traceFetch,
     });
     try {
-      const response = await generateText({
+      const streamMode = this.config.streamMode ?? 'auto';
+      const request = {
         model: provider.chat(this.config.model),
         system: input.systemPrompt,
         messages: this.buildMessages(input),
@@ -38,10 +43,49 @@ export class OpenAICompatibleReplyProvider implements ReplyProvider {
             systemMessageMode: 'system',
           },
         },
-      });
-      const content = response.text.trim();
-      if (content) {
-        yield content;
+      } as const;
+
+      const runGenerateText = async (): Promise<string> => {
+        const response = await generateText(request);
+        return response.text.trim();
+      };
+
+      if (streamMode === 'force_non_stream') {
+        const nonStreamText = await runGenerateText();
+        if (nonStreamText) {
+          yield nonStreamText;
+        }
+        return;
+      }
+
+      let streamedAnyChunk = false;
+      try {
+        const streamResult = streamText(request);
+        for await (const chunk of streamResult.textStream) {
+          if (!chunk) {
+            continue;
+          }
+          streamedAnyChunk = true;
+          yield chunk;
+        }
+        const finalText = (await streamResult.text).trim();
+        if (!streamedAnyChunk && finalText) {
+          yield finalText;
+        }
+        return;
+      } catch (streamError) {
+        if (streamMode === 'auto' && !streamedAnyChunk) {
+          const nonStreamText = await runGenerateText();
+          if (nonStreamText) {
+            yield nonStreamText;
+          }
+          return;
+        }
+        if (streamMode === 'auto' && streamedAnyChunk) {
+          // Keep partial stream output as usable assistant text in auto mode.
+          return;
+        }
+        throw streamError;
       }
     } catch (error) {
       const normalized =

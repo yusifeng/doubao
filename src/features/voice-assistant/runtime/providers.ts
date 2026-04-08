@@ -71,7 +71,10 @@ export function createVoiceAssistantProviders(runtimeConfig: RuntimeConfig): Voi
     : new MockDialogEngineProvider();
   const replyProvider: ReplyProvider =
     process.env.NODE_ENV !== 'test' && replyChainMode === 'custom_llm' && hasLLMConfig
-      ? new OpenAICompatibleReplyProvider(runtimeConfig.llm)
+      ? new OpenAICompatibleReplyProvider({
+          ...runtimeConfig.llm,
+          streamMode: runtimeConfig.replyStreamMode,
+        })
       : new LocalReplyProvider();
   return {
     audio: audioProvider,

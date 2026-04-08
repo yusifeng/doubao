@@ -4,6 +4,7 @@ describe('createVoiceAssistantProviders platform routing', () => {
   const originalWebSocket = global.WebSocket;
   const runtimeConfig = {
     replyChainMode: 'official_s2s' as const,
+    replyStreamMode: 'auto' as const,
     llm: {
       baseUrl: '',
       apiKey: '',
