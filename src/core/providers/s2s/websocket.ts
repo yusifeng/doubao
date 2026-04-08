@@ -1,4 +1,4 @@
-import type { S2SProvider } from './types';
+import type { S2SProvider, S2STextQueryOptions } from './types';
 import { KONAN_CHARACTER_MANIFEST } from '../../../character/konanManifest';
 import {
   buildAudioFrame,
@@ -239,7 +239,7 @@ export class WebSocketS2SProvider implements S2SProvider {
     socket.send(buildAudioFrame(this.sessionId, frame) as unknown as ArrayBuffer);
   }
 
-  async sendTextQuery(text: string): Promise<string | null> {
+  async sendTextQuery(text: string, options?: S2STextQueryOptions): Promise<string | null> {
     this.ensureSessionStarted('sendTextQuery');
     const socket = this.socket;
     if (!socket) {
@@ -247,10 +247,13 @@ export class WebSocketS2SProvider implements S2SProvider {
     }
     this.clearTurnState();
     socket.send(buildTextQueryFrame(this.sessionId, text) as unknown as ArrayBuffer);
-    return this.waitForAssistantText(7000);
+    return this.waitForAssistantText(7000, options?.onPartialText);
   }
 
-  async waitForAssistantText(timeoutMs = 7000): Promise<string | null> {
+  async waitForAssistantText(
+    timeoutMs = 7000,
+    onPartialText?: (text: string) => void,
+  ): Promise<string | null> {
     this.ensureSessionStarted('waitForAssistantText');
     const deadline = Date.now() + timeoutMs;
 
@@ -279,6 +282,13 @@ export class WebSocketS2SProvider implements S2SProvider {
           this.turnState.pendingAssistantText = this.mergeStreamingText(this.turnState.pendingAssistantText, frame.text);
         }
         this.turnState.pendingAssistantHasText = this.turnState.pendingAssistantText.length > 0;
+        if (this.turnState.pendingAssistantHasText && onPartialText) {
+          try {
+            onPartialText(this.turnState.pendingAssistantText);
+          } catch {
+            // Ignore consumer-side callback failures to keep websocket turn alive.
+          }
+        }
       }
       if (
         frame.event !== null &&

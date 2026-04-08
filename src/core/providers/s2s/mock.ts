@@ -29,7 +29,7 @@ export class MockS2SProvider implements S2SProvider {
     return null;
   }
 
-  async waitForAssistantText(_timeoutMs?: number): Promise<string | null> {
+  async waitForAssistantText(_timeoutMs?: number, _onPartialText?: (text: string) => void): Promise<string | null> {
     return null;
   }
 

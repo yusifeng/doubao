@@ -6,6 +6,7 @@ import { VoiceAssistantConversationScreen } from '../VoiceAssistantConversationS
 jest.mock('../../config/runtimeConfigRepo', () => ({
   getEffectiveRuntimeConfig: jest.fn(async () => ({
     replyChainMode: 'official_s2s',
+    replyStreamMode: 'auto',
     llm: {
       baseUrl: '',
       apiKey: '',
@@ -93,6 +94,7 @@ function createSession(): UseTextChatResult {
     connectivityHint: '尚未测试连接',
     runtimeConfig: {
       replyChainMode: 'custom_llm',
+      replyStreamMode: 'auto',
       llm: {
         baseUrl: 'https://api.deepseek.com/v1',
         apiKey: 'sk-test',

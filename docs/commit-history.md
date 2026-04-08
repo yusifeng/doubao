@@ -26,6 +26,44 @@
 
 ## Entries
 
+## 2026-04-08 17:33 (CST) - feat(official-s2s): stream partial text with mode controls
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `src/core/providers/s2s/types.ts`
+  - `src/core/providers/s2s/websocket.ts`
+  - `src/core/providers/s2s/mock.ts`
+  - `src/core/providers/s2s/__tests__/websocket.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.internal.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx`
+  - `src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx`
+  - `docs/design-docs/voice-assistant-s2s-v1-design.md`
+  - `docs/product-specs/voice-assistant-s2s-v1.md`
+- Summary:
+  - Added optional partial-text callback support to S2S text query contract and WebSocket implementation.
+  - Updated official S2S text pipeline path to stream partial text into pending UI in `auto/force_stream`, while keeping `force_non_stream` full-response behavior.
+  - Suppressed Android official incremental draft rendering under `force_non_stream`, while preserving final-text fallback in `chat_final`.
+  - Added pending-reply cleanup guard in text round flow to prevent stale `'...'` placeholder retention on early-return branches.
+  - Synchronized runtime/UI test fixtures with required `replyStreamMode` runtime config field.
+  - Synced product/design docs for stream strategy behavior and fallback semantics.
+- Tests:
+  - `pnpm exec jest src/core/providers/s2s/__tests__/websocket.test.ts src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.android.sessionIsolation.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.clientTtsSelection.test.tsx src/features/voice-assistant/runtime/__tests__/useTextChat.realtimeSilenceGate.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantConversationScreen.test.tsx src/features/voice-assistant/ui/__tests__/VoiceAssistantSessionDrawerContent.test.tsx` (pass, includes known act warnings)
+- Risk:
+  - Official S2S partial display quality depends on upstream partial granularity; transient drafts may still look fragmented before final merge.
+- Rollback:
+  - Revert the scoped S2S runtime/test/doc files above to restore prior non-stream official text fallback behavior.
+
 ## 2026-04-08 17:31 (CST) - feat(custom-llm): stream replies with mode fallback
 
 - Commit: pending

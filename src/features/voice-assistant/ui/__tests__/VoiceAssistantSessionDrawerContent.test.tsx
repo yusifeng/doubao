@@ -41,6 +41,7 @@ function createSession(): UseTextChatResult {
     connectivityHint: '尚未测试连接',
     runtimeConfig: {
       replyChainMode: 'official_s2s',
+      replyStreamMode: 'auto',
       llm: {
         baseUrl: '',
         apiKey: '',

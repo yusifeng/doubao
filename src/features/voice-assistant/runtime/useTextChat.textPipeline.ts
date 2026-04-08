@@ -76,8 +76,27 @@ export function createTextPipelineHandlers(deps: {
 
     if (deps.runtimeConfig.replyChainMode === 'official_s2s' && !deps.useCustomReplyProvider) {
       await deps.ensureS2SSession();
-      const serverReply = await deps.providers.s2s.sendTextQuery(userText);
-      return sanitizeAssistantText(serverReply?.trim() ?? '');
+      if (deps.runtimeConfig.replyStreamMode === 'force_non_stream') {
+        const serverReply = await deps.providers.s2s.sendTextQuery(userText);
+        return sanitizeAssistantText(serverReply?.trim() ?? '');
+      }
+      let partialAssistantText = '';
+      try {
+        const serverReply = await deps.providers.s2s.sendTextQuery(userText, {
+          onPartialText: (partialText: string) => {
+            const normalized = partialText.trim();
+            if (!normalized) {
+              return;
+            }
+            partialAssistantText = normalized;
+            deps.setPendingAssistantReply(normalized);
+            void deps.updateConversationRuntimeStatus('speaking');
+          },
+        });
+        return sanitizeAssistantText(serverReply?.trim() || partialAssistantText);
+      } finally {
+        deps.setPendingAssistantReply('');
+      }
     }
 
     let assistantText = '';
@@ -145,62 +164,66 @@ export function createTextPipelineHandlers(deps: {
     await deps.syncConversationState();
     deps.setPendingAssistantReply('...');
 
-    const assistantText = await generateAssistantReplyFromProvider({
-      userText: clean,
-      mode: userMessageType === 'audio' ? 'voice' : 'text',
-      conversationId: deps.activeConversationId,
-      fallbackToS2S: !deps.useCustomReplyProvider,
-    });
-    if (!assistantText) {
-      throw new Error('empty assistant response for current reply chain');
-    }
-
-    if (deps.useCustomReplyProvider) {
-      deps.setConnectivityHint(
-        `回复来源：自定义LLM（${deps.llmConfig.provider || 'openai-compatible'} / ${deps.llmConfig.model || 'unknown'}）`,
-      );
-    }
-    await deps.repo.appendMessage(deps.activeConversationId, {
-      conversationId: deps.activeConversationId,
-      role: 'assistant',
-      content: assistantText,
-      type: assistantMessageType,
-    });
-    await deps.updateConversationRuntimeStatus('speaking');
-    if (assistantMessageType === 'audio') {
-      if (deps.useCustomVoiceS2STts) {
-        let playedByS2SVoice = false;
-        try {
-          await deps.androidSessionController.prepare({ dialogWorkMode: 'delegate_chat_tts_text' });
-          await deps.androidSessionController.startConversation({
-            inputMode: 'text',
-            model: VOICE_ASSISTANT_DIALOG_MODEL,
-            speaker: deps.runtimeConfig.voice.speakerId,
-            characterManifest: KONAN_CHARACTER_MANIFEST,
-            botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
-          });
-          await deps.androidSessionController.useClientTriggeredTts();
-          await deps.androidSessionController.streamClientTtsText({
-            start: true,
-            content: assistantText,
-            end: true,
-          });
-          playedByS2SVoice = true;
-          deps.setConnectivityHint('语音播报来源：S2S Voice（custom_llm 文本）');
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'unknown error';
-          deps.providers.observability.log('warn', 'failed to speak assistant text via s2s voice', { message });
-        } finally {
-          try {
-            await deps.androidSessionController.stopConversation();
-          } catch {}
-        }
-        if (!playedByS2SVoice) {
-          deps.setConnectivityHint('文本已生成，S2S语音播报不可用。');
-        }
-      } else {
-        await deps.providers.audio.speak(assistantText);
+    try {
+      const assistantText = await generateAssistantReplyFromProvider({
+        userText: clean,
+        mode: userMessageType === 'audio' ? 'voice' : 'text',
+        conversationId: deps.activeConversationId,
+        fallbackToS2S: !deps.useCustomReplyProvider,
+      });
+      if (!assistantText) {
+        throw new Error('empty assistant response for current reply chain');
       }
+
+      if (deps.useCustomReplyProvider) {
+        deps.setConnectivityHint(
+          `回复来源：自定义LLM（${deps.llmConfig.provider || 'openai-compatible'} / ${deps.llmConfig.model || 'unknown'}）`,
+        );
+      }
+      await deps.repo.appendMessage(deps.activeConversationId, {
+        conversationId: deps.activeConversationId,
+        role: 'assistant',
+        content: assistantText,
+        type: assistantMessageType,
+      });
+      await deps.updateConversationRuntimeStatus('speaking');
+      if (assistantMessageType === 'audio') {
+        if (deps.useCustomVoiceS2STts) {
+          let playedByS2SVoice = false;
+          try {
+            await deps.androidSessionController.prepare({ dialogWorkMode: 'delegate_chat_tts_text' });
+            await deps.androidSessionController.startConversation({
+              inputMode: 'text',
+              model: VOICE_ASSISTANT_DIALOG_MODEL,
+              speaker: deps.runtimeConfig.voice.speakerId,
+              characterManifest: KONAN_CHARACTER_MANIFEST,
+              botName: VOICE_ASSISTANT_DIALOG_BOT_NAME,
+            });
+            await deps.androidSessionController.useClientTriggeredTts();
+            await deps.androidSessionController.streamClientTtsText({
+              start: true,
+              content: assistantText,
+              end: true,
+            });
+            playedByS2SVoice = true;
+            deps.setConnectivityHint('语音播报来源：S2S Voice（custom_llm 文本）');
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'unknown error';
+            deps.providers.observability.log('warn', 'failed to speak assistant text via s2s voice', { message });
+          } finally {
+            try {
+              await deps.androidSessionController.stopConversation();
+            } catch {}
+          }
+          if (!playedByS2SVoice) {
+            deps.setConnectivityHint('文本已生成，S2S语音播报不可用。');
+          }
+        } else {
+          await deps.providers.audio.speak(assistantText);
+        }
+      }
+    } finally {
+      deps.setPendingAssistantReply('');
     }
   };
 
@@ -326,7 +349,10 @@ export function createTextPipelineHandlers(deps: {
       return { ok: false, message };
     }
     try {
-      const provider = new OpenAICompatibleReplyProvider(llmConfigToTest);
+      const provider = new OpenAICompatibleReplyProvider({
+        ...llmConfigToTest,
+        streamMode: deps.runtimeConfig.replyStreamMode,
+      });
       await withTimeout(
         (async () => {
           let generated = '';

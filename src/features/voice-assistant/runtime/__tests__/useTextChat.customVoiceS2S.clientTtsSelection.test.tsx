@@ -21,6 +21,7 @@ let mockDialogListener: ((event: { type: string; text?: string; sessionId?: stri
 const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
   replyChainMode: 'custom_llm' as const,
+  replyStreamMode: 'auto' as const,
   llm: { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'test-api-key', model: 'deepseek-chat', provider: 'deepseek' },
   s2s: { appId: '7948119309', accessToken: 'test-access-token', wsUrl: DEFAULT_S2S_WS_URL },
   persona: {
@@ -91,6 +92,7 @@ jest.mock('../../config/env', () => ({
   readS2SEnv: () => ({ appId: '7948119309', appKey: 'test-app-key', accessToken: 'test-access-token' }),
   readLLMEnv: () => ({ baseUrl: 'https://api.deepseek.com/v1', apiKey: 'test-api-key', model: 'deepseek-chat', provider: 'deepseek' }),
   readReplyChainMode: () => 'custom_llm',
+  readReplyStreamMode: () => 'auto',
   maskSecret: (value: string) => value,
 }));
 

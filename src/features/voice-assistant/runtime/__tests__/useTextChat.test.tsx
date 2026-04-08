@@ -24,7 +24,10 @@ const mockFinishSession = jest.fn<Promise<void>, []>();
 const mockFinishConnection = jest.fn<Promise<void>, []>();
 const mockInterrupt = jest.fn<Promise<void>, []>();
 const mockDisconnect = jest.fn<Promise<void>, []>();
-const mockSendTextQuery = jest.fn<Promise<string>, [string]>();
+const mockSendTextQuery = jest.fn<
+  Promise<string | null>,
+  [string, { onPartialText?: (text: string) => void }?]
+>();
 const mockSendAudioFrame = jest.fn<Promise<void>, [Uint8Array]>();
 const mockWaitForAssistantAudioChunk = jest.fn<Promise<Uint8Array | null>, [number]>();
 const mockWaitForAssistantText = jest.fn<Promise<string | null>, [number]>();
@@ -32,6 +35,7 @@ const mockGenerateReplyStream = jest.fn();
 let latestCaptureCallback: ((frame: Uint8Array) => Promise<void> | void) | undefined;
 const runtimeConfig = {
   replyChainMode: 'official_s2s' as const,
+  replyStreamMode: 'auto' as const,
   llm: {
     baseUrl: '',
     apiKey: '',
@@ -124,6 +128,7 @@ jest.mock('../../config/env', () => ({
   readS2SEnv: () => null,
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
+  readReplyStreamMode: () => 'auto',
   maskSecret: (value: string) => value,
 }));
 
@@ -275,6 +280,50 @@ describe('useTextChat realtime lifecycle lock', () => {
     expect(result.current.messages.some((message) => message.role === 'user' && message.content === 'custom链路配置缺失')).toBe(false);
     expect(mockGenerateReplyStream).not.toHaveBeenCalled();
     expect(mockSendTextQuery).not.toHaveBeenCalled();
+  });
+
+  it('uses official_s2s partial stream text as final fallback when final snapshot is missing', async () => {
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({
+      ...runtimeConfig,
+      s2s: {
+        appId: 'test-app-id',
+        accessToken: 'test-token',
+        wsUrl: 'wss://example.com/realtime/dialogue',
+      },
+      replyStreamMode: 'auto',
+    });
+    mockSendTextQuery.mockImplementationOnce(async (_text, options) => {
+      options?.onPartialText?.('这是流式');
+      options?.onPartialText?.('这是流式回复');
+      return null;
+    });
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.sendText('官方流式回退测试');
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '这是流式回复',
+        ),
+      ).toBe(true);
+    });
+    expect(mockSendTextQuery).toHaveBeenCalledWith(
+      '官方流式回退测试',
+      expect.objectContaining({
+        onPartialText: expect.any(Function),
+      }),
+    );
   });
 
   it('uses hydrated persona snapshot when creating conversation before bootstrap hydration', async () => {

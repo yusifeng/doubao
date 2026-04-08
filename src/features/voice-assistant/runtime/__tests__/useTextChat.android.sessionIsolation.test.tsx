@@ -29,6 +29,7 @@ const mockReadVoicePipelineMode = jest.fn(() => 'realtime_audio');
 const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
   replyChainMode: 'official_s2s' as const,
+  replyStreamMode: 'auto' as const,
   llm: {
     baseUrl: '',
     apiKey: '',
@@ -131,6 +132,7 @@ jest.mock('../../config/env', () => ({
   }),
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
+  readReplyStreamMode: () => 'auto',
   maskSecret: (value: string) => value,
 }));
 

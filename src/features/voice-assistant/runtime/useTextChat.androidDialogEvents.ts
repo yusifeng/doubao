@@ -498,19 +498,23 @@ export function handleAndroidDialogPayloadEvent(
         return true;
       }
       if (event.type === 'chat_partial') {
+        const shouldExposePlatformPartial =
+          deps.replyChainMode !== 'official_s2s' || deps.replyStreamMode !== 'force_non_stream';
         deps.setLiveUserTranscript('');
         deps.dispatchDialogOrchestrator({ type: 'turn_reply_owner', owner: 'platform' });
         deps.androidAssistantDraftRef.current = deps.mergeAssistantDraft(
           deps.androidAssistantDraftRef.current,
           event.text,
         );
-        deps.dispatchDialogOrchestrator({
-          type: 'draft_reply_delta',
-          text: event.text,
-          source: 'platform',
-        });
+        if (shouldExposePlatformPartial) {
+          deps.dispatchDialogOrchestrator({
+            type: 'draft_reply_delta',
+            text: event.text,
+            source: 'platform',
+          });
+          deps.setPendingAssistantReply(deps.androidAssistantDraftRef.current);
+        }
         deps.recordAudit('reply.platform.partial', { extra: { textLength: event.text.length } });
-        deps.setPendingAssistantReply(deps.androidAssistantDraftRef.current);
         if (deps.voiceLoopActiveRef.current) {
           deps.updateRealtimeCallPhase('speaking');
           deps.dispatchDialogOrchestrator({ type: 'turn_phase', phase: 'speaking' });

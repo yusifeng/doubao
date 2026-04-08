@@ -18,6 +18,7 @@ const mockGenerateReplyStream = jest.fn();
 let latestCaptureCallback: ((frame: Uint8Array) => Promise<void> | void) | undefined;
 const runtimeConfig = {
   replyChainMode: 'official_s2s' as const,
+  replyStreamMode: 'auto' as const,
   llm: {
     baseUrl: '',
     apiKey: '',
@@ -110,6 +111,7 @@ jest.mock('../../config/env', () => ({
   readS2SEnv: () => null,
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
+  readReplyStreamMode: () => 'auto',
   maskSecret: (value: string) => value,
 }));
 

@@ -52,6 +52,26 @@ describe('WebSocketS2SProvider text merge', () => {
     await expect(provider.sendTextQuery('你好')).rejects.toThrow('S2S session is not started');
   });
 
+  it('emits partial text updates while waiting for final assistant text', async () => {
+    const provider = createProvider() as any;
+    provider.socket = { send: jest.fn() };
+    provider.connected = true;
+    provider.phase = 'session_started';
+    provider.frameQueue = [
+      { event: 352, text: '这是', audio: null, error: null },
+      { event: 352, text: '流式回复', audio: null, error: null },
+      { event: 359, text: '', audio: null, error: null },
+    ];
+
+    const partials: string[] = [];
+    const result = await provider.waitForAssistantText(200, (text: string) => {
+      partials.push(text);
+    });
+
+    expect(partials).toEqual(['这是', '这是流式回复']);
+    expect(result).toBe('这是流式回复');
+  });
+
   it('clears pending turn text while preserving last completed dedupe marker by default', () => {
     const provider = createProvider() as any;
     provider.turnState.pendingAssistantText = '测试中';

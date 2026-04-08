@@ -29,6 +29,7 @@ const mockReadVoicePipelineMode = jest.fn(() => 'realtime_audio');
 const DEFAULT_S2S_WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
 const runtimeConfig = {
   replyChainMode: 'official_s2s' as const,
+  replyStreamMode: 'auto' as const,
   llm: {
     baseUrl: '',
     apiKey: '',
@@ -139,6 +140,7 @@ jest.mock('../../config/env', () => ({
   }),
   readLLMEnv: () => null,
   readReplyChainMode: () => 'official_s2s',
+  readReplyStreamMode: () => 'auto',
   maskSecret: (value: string) => value,
 }));
 
@@ -557,6 +559,56 @@ describe('useTextChat android dialog sdk flow', () => {
         ),
       ).toBe(true);
       expect(result.current.voiceRuntimeHint).toBe('正在听你说');
+    });
+  });
+
+  it('suppresses official partial text rendering in force_non_stream mode but keeps final fallback', async () => {
+    const runtimeConfigRepoModule = jest.requireMock('../../config/runtimeConfigRepo') as {
+      getEffectiveRuntimeConfig: jest.Mock;
+    };
+    runtimeConfigRepoModule.getEffectiveRuntimeConfig.mockResolvedValueOnce({
+      ...runtimeConfig,
+      replyStreamMode: 'force_non_stream',
+      s2s: {
+        ...runtimeConfig.s2s,
+        appId: '7948119309',
+        accessToken: 'test-access-token',
+      },
+    });
+
+    const { result } = renderHook(() => useTextChat());
+
+    await waitFor(() => {
+      expect(result.current.activeConversationId).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.toggleVoice();
+    });
+
+    await act(async () => {
+      const sessionId = emitEngineStart('voice-session-force-non-stream');
+      mockDialogListener?.({ type: 'asr_start', sessionId });
+      mockDialogListener?.({ type: 'asr_final', text: '你好', sessionId });
+      mockDialogListener?.({ type: 'chat_partial', text: '这是非流式展示', sessionId });
+    });
+
+    expect(result.current.pendingAssistantReply).toBe('');
+
+    await act(async () => {
+      mockDialogListener?.({
+        type: 'chat_final',
+        text: '',
+        sessionId: 'voice-session-force-non-stream',
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        result.current.messages.some(
+          (message) => message.role === 'assistant' && message.content === '这是非流式展示',
+        ),
+      ).toBe(true);
     });
   });
 
