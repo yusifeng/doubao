@@ -1,3 +1,5 @@
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
+
 export function createVoiceToggleHandlers(deps: {
   activeConversationId: string | null;
   isVoiceActive: boolean;
@@ -118,7 +120,12 @@ export function createVoiceToggleHandlers(deps: {
             const message = error instanceof Error ? error.message : 'unknown error';
             deps.providers.observability.log('warn', 'failed to start android dialog voice call', { message });
             deps.resetRealtimeCallState();
-            deps.setConnectivityHint(`Android Dialog SDK 通话启动失败：${message}`);
+            deps.setConnectivityHint(
+              withFaultSignature(
+                VOICE_FAULT_SIGNATURES.F9_ANDROID_CALL_START_FAILED,
+                `Android Dialog SDK 通话启动失败：${message}`,
+              ),
+            );
             await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
             await deps.syncConversationState();
           }

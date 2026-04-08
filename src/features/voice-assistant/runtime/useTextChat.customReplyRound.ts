@@ -1,5 +1,6 @@
 import { buildAssistantReply } from '../service/useCases';
 import { sanitizeAssistantText } from '../service/assistantText';
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
 
 type LlmConfig = {
   provider?: string;
@@ -187,7 +188,12 @@ export async function runCustomLlmReplyRound(params: {
           );
           canStreamViaClientTts = false;
           disableClientTtsFlag();
-          setConnectivityHint('自定义LLM文本已生成，S2S语音播报中断。');
+          setConnectivityHint(
+            withFaultSignature(
+              VOICE_FAULT_SIGNATURES.F11_CUSTOM_REPLY_ROUND_FAILED,
+              '自定义LLM文本已生成，S2S语音播报中断。',
+            ),
+          );
           try {
             await interruptCurrentDialog();
           } catch {
@@ -235,7 +241,12 @@ export async function runCustomLlmReplyRound(params: {
       log('warn', 'custom llm s2s voice unavailable; skip local tts fallback', {
         generation,
       });
-      setConnectivityHint('自定义LLM文本已生成，S2S语音播报未就绪。');
+      setConnectivityHint(
+        withFaultSignature(
+          VOICE_FAULT_SIGNATURES.F2_CLIENT_TTS_NOT_READY,
+          '自定义LLM文本已生成，S2S语音播报未就绪。',
+        ),
+      );
     }
     return { assistantText, assistantPersisted, abortedByGeneration: false };
   } catch (error) {
@@ -269,7 +280,12 @@ export async function runCustomLlmReplyRound(params: {
           buildDialogLogContext({ message: interruptErrorMessage }),
         );
       }
-      setConnectivityHint('自定义LLM语音回复失败，请重试。');
+      setConnectivityHint(
+        withFaultSignature(
+          VOICE_FAULT_SIGNATURES.F11_CUSTOM_REPLY_ROUND_FAILED,
+          '自定义LLM语音回复失败，请重试。',
+        ),
+      );
       await appendFailureAssistantMessage();
       assistantPersisted = true;
     }

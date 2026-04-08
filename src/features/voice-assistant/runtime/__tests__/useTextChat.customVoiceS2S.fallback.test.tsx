@@ -236,7 +236,8 @@ describe('useTextChat custom_llm fallback paths', () => {
           (message) => message.role === 'assistant' && message.content === '自定义LLM语音回复失败，请重试。',
         ),
       ).toBe(true);
-      expect(result.current.connectivityHint).toBe('自定义LLM语音回复失败，请重试。');
+      expect(result.current.connectivityHint).toContain('[F11_CUSTOM_REPLY_ROUND_FAILED]');
+      expect(result.current.connectivityHint).toContain('自定义LLM语音回复失败，请重试。');
     });
 
     await act(async () => {

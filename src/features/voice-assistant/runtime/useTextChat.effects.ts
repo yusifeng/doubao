@@ -4,6 +4,7 @@ import type { RuntimeConfig } from '../config/runtimeConfig';
 import { getEffectiveRuntimeConfig } from '../config/runtimeConfigRepo';
 import { isCompleteLLMConfig } from '../config/runtimeConfig';
 import { isRuntimeConfigEqual } from '../config/runtimeConfig';
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
 
 export function useRuntimeConfigHydrationEffect(params: {
   setRuntimeConfig: (value: any) => void;
@@ -89,7 +90,12 @@ export function useCustomReplyConfigHintEffect(params: {
     if (params.replyChainMode !== 'custom_llm' || isCompleteLLMConfig(params.llmConfig)) {
       return;
     }
-    params.setConnectivityHint('当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置；已禁用兜底发送。');
+    params.setConnectivityHint(
+      withFaultSignature(
+        VOICE_FAULT_SIGNATURES.F8_REPLY_CHAIN_CONFIG_INCOMPLETE,
+        '当前为 custom_llm 模式，但缺少 Base URL / API Key / Model 配置；已禁用兜底发送。',
+      ),
+    );
   }, [params.llmConfig, params.replyChainMode]);
 }
 

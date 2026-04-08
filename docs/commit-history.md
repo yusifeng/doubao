@@ -1220,3 +1220,43 @@
   - Removing `'...'` placeholder may alter perceived progress during extremely slow first token latency.
 - Rollback:
   - Revert the scope files above to restore ref-mirrored runtime behavior, text-compare duplicate patches, and placeholder-first pending rendering.
+
+## 2026-04-09 03:22 (CST) - refactor(voice-chat): unify fault signatures in runtime and runbook
+
+- Commit: pending
+- Author: Codex
+- Scope:
+  - `docs/commit-history.md`
+  - `docs/exec-plans/active/plan-voice-assistant-storage-runtime-refactor.md`
+  - `docs/references/expo-android-debug-runbook.md`
+  - `docs/references/voice-fault-signatures.md`
+  - `src/features/voice-assistant/service/faultSignature.ts`
+  - `src/features/voice-assistant/service/__tests__/faultSignature.test.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.effects.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.textPipeline.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.voiceToggle.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.customReplyRound.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogRuntime.ts`
+  - `src/features/voice-assistant/runtime/useTextChat.androidDialogEvents.ts`
+  - `src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx`
+- Summary:
+  - Added centralized fault-signature service (`VOICE_FAULT_SIGNATURES` + `withFaultSignature`) to remove scattered ad-hoc error hint construction in runtime.
+  - Unified key runtime failure hints to `[SIGNATURE] message` format across text send failures, reply-chain config incomplete failures, Android call startup failures, Android runtime errors, custom voice round failures, and platform leak recovery paths.
+  - Fixed signature classification in Android ASR-final error branch: non-custom failures now use runtime error signature, avoiding `custom` mis-tagging.
+  - Added focused unit tests for fault-signature helper and updated fallback runtime test assertions to validate signature-prefixed hints.
+  - Updated fault-signature handbook + Android debug runbook with unified hint format, signature filtering command, and extended signature table.
+  - Marked active exec-plan item “统一错误与故障签名，补齐 runbook” as completed.
+- Tests:
+  - `pnpm exec tsc --noEmit` (pass)
+  - `pnpm run test -- src/features/voice-assistant/service/__tests__/faultSignature.test.ts` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.customVoiceS2S.fallback.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.android.test.tsx` (pass)
+  - `pnpm run test -- src/features/voice-assistant/runtime/__tests__/useTextChat.test.tsx` (pass, existing `act(...)` warnings retained)
+  - `./android/gradlew -p android :app:compileDebugKotlin` (pass)
+  - `codex review --uncommitted -c model="gpt-5.3-codex" -c model_reasoning_effort="medium"` (pass; first run found one signature-classification issue, fixed and re-reviewed clean)
+- Risk:
+  - Signature prefix enters user-visible `connectivityHint`; any downstream strict string matching (outside current tests) may need compatibility updates.
+  - Added fault codes currently focus on runtime hints; logs/events that bypass hint writes may still be untagged and require follow-up unification.
+  - Runtime hint messages now include dynamic error details in some branches (`F7`), which may expose noisier raw SDK/network wording.
+- Rollback:
+  - Revert the files above to restore pre-signature hint behavior and previous runbook wording.

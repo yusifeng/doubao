@@ -1,4 +1,5 @@
 import { sanitizeAssistantText } from '../service/assistantText';
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
 import { createTurnTraceId } from './useTextChat.shared';
 import { runCustomLlmReplyRound } from './useTextChat.customReplyRound';
 import type { Message } from '../types/model';
@@ -360,10 +361,20 @@ export function createAndroidDialogRuntimeHandlers(deps: {
         deps.updateRealtimeListeningState('ready');
         deps.updateRealtimeCallPhase('listening');
         await deps.updateConversationRuntimeStatus('listening', { refreshConversations: true });
-        deps.setConnectivityHint('检测到平台回复泄漏，已重置语音会话并继续自定义LLM。');
+        deps.setConnectivityHint(
+          withFaultSignature(
+            VOICE_FAULT_SIGNATURES.F3_PLATFORM_LEAK_IN_CUSTOM,
+            '检测到平台回复泄漏，已重置语音会话并继续自定义LLM。',
+          ),
+        );
       } else {
         await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
-        deps.setConnectivityHint('检测到平台回复泄漏，已自动挂断通话。');
+        deps.setConnectivityHint(
+          withFaultSignature(
+            VOICE_FAULT_SIGNATURES.F3_PLATFORM_LEAK_IN_CUSTOM,
+            '检测到平台回复泄漏，已自动挂断通话。',
+          ),
+        );
       }
     } catch (resetError) {
       const message = resetError instanceof Error ? resetError.message : 'unknown error';
@@ -378,7 +389,12 @@ export function createAndroidDialogRuntimeHandlers(deps: {
       );
       deps.resetRealtimeCallState();
       await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
-      deps.setConnectivityHint('检测到平台回复泄漏，自动重置失败，请重新接通语音通话。');
+      deps.setConnectivityHint(
+        withFaultSignature(
+          VOICE_FAULT_SIGNATURES.F3_PLATFORM_LEAK_IN_CUSTOM,
+          '检测到平台回复泄漏，自动重置失败，请重新接通语音通话。',
+        ),
+      );
     }
   };
 

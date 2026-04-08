@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
 import { maskSecret } from '../config/env';
 import { createVoiceAssistantProviders } from './providers';
 import { OpenAICompatibleReplyProvider } from '../../../core/providers/reply/openaiCompatible';
@@ -234,7 +235,9 @@ export function createTextPipelineHandlers(deps: {
     }
     if (deps.runtimeConfig.replyChainMode === 'custom_llm' && !deps.useCustomReplyProvider) {
       const message = 'custom_llm 配置不完整（Base URL / API Key / Model），已阻止发送且不做链路兜底。';
-      deps.setConnectivityHint(message);
+      deps.setConnectivityHint(
+        withFaultSignature(VOICE_FAULT_SIGNATURES.F8_REPLY_CHAIN_CONFIG_INCOMPLETE, message),
+      );
       await deps.updateConversationRuntimeStatus('error');
       await deps.repo.appendMessage(deps.activeConversationId, {
         conversationId: deps.activeConversationId,
@@ -247,7 +250,9 @@ export function createTextPipelineHandlers(deps: {
     }
     if (deps.runtimeConfig.replyChainMode === 'official_s2s' && !isCompleteS2SConfig(deps.runtimeConfig.s2s)) {
       const message = 'official_s2s 配置不完整（缺少 App ID / Access Token），已阻止发送且不做链路兜底。';
-      deps.setConnectivityHint(message);
+      deps.setConnectivityHint(
+        withFaultSignature(VOICE_FAULT_SIGNATURES.F8_REPLY_CHAIN_CONFIG_INCOMPLETE, message),
+      );
       await deps.updateConversationRuntimeStatus('error');
       await deps.repo.appendMessage(deps.activeConversationId, {
         conversationId: deps.activeConversationId,
@@ -301,6 +306,12 @@ export function createTextPipelineHandlers(deps: {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
       deps.providers.observability.log('warn', 'failed to process text round', { message });
+      deps.setConnectivityHint(
+        withFaultSignature(
+          VOICE_FAULT_SIGNATURES.F7_TEXT_ROUND_FAILED,
+          `本轮文本对话失败，请检查网络后重试。(${message})`,
+        ),
+      );
       if (deps.useAndroidDialogTextRuntime) {
         await deps.stopAndroidDialogConversation();
         deps.resetRealtimeCallState();

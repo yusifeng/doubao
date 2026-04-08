@@ -2,6 +2,7 @@ import type { DialogEngineEvent } from '../../../core/providers/dialog-engine/ty
 import { finalizeOfficialS2SReply } from './dialog-orchestrator/replyDrivers/officialS2SReplyDriver';
 import { shouldDropPlatformReplyInCustomTurn } from './dialog-orchestrator/replyDrivers/customLlmReplyDriver';
 import { isSameAssistantText, sanitizeAssistantText } from '../service/assistantText';
+import { VOICE_FAULT_SIGNATURES, withFaultSignature } from '../service/faultSignature';
 
 type LifecycleDeps = {
   androidDialogSessionIdRef: { current: string | null };
@@ -196,7 +197,12 @@ export function handleAndroidLifecycleEvent(event: DialogEngineEvent, deps: Life
       const message = event.errorMessage ?? event.raw ?? '未知错误';
       deps.androidPlayerSpeakingRef.current = false;
       deps.androidCustomClientTtsStreamStartedRef.current = false;
-      deps.setConnectivityHint(`Android Dialog SDK 错误：${message}`);
+      deps.setConnectivityHint(
+        withFaultSignature(
+          VOICE_FAULT_SIGNATURES.F10_ANDROID_DIALOG_RUNTIME_ERROR,
+          `Android Dialog SDK 错误：${message}`,
+        ),
+      );
       deps.dispatchDialogOrchestrator({ type: 'session_error' });
       void deps.updateConversationRuntimeStatus('error', { refreshConversations: true });
       if (deps.voiceLoopActiveRef.current) {
@@ -415,7 +421,12 @@ export function handleAndroidDialogPayloadEvent(
                 type: 'text',
                 idempotencyKey: ['assistant-custom-tts-selection-failed', turnConversationId, replyGeneration].join(':'),
               });
-              deps.setConnectivityHint('本轮自定义语音接管失败，正在重置会话。');
+              deps.setConnectivityHint(
+                withFaultSignature(
+                  VOICE_FAULT_SIGNATURES.F2_CLIENT_TTS_NOT_READY,
+                  '本轮自定义语音接管失败，正在重置会话。',
+                ),
+              );
               if (turnConversationId === deps.activeConversationId) {
                 await deps.syncConversationState();
               } else {
@@ -431,7 +442,12 @@ export function handleAndroidDialogPayloadEvent(
                 deps.updateRealtimeListeningState('ready');
                 deps.updateRealtimeCallPhase('listening');
                 await deps.updateConversationRuntimeStatus('listening', { refreshConversations: true });
-                deps.setConnectivityHint('本轮自定义语音接管失败，已重置会话后继续监听。');
+                deps.setConnectivityHint(
+                  withFaultSignature(
+                    VOICE_FAULT_SIGNATURES.F2_CLIENT_TTS_NOT_READY,
+                    '本轮自定义语音接管失败，已重置会话后继续监听。',
+                  ),
+                );
               } else {
                 await deps.updateConversationRuntimeStatus('idle', { refreshConversations: true });
               }
@@ -462,9 +478,19 @@ export function handleAndroidDialogPayloadEvent(
               type: 'text',
               idempotencyKey: ['assistant-custom-voice-failed', turnConversationId, replyGeneration].join(':'),
             });
-            deps.setConnectivityHint('本轮自定义语音接管失败，已回到监听状态。');
+            deps.setConnectivityHint(
+              withFaultSignature(
+                VOICE_FAULT_SIGNATURES.F2_CLIENT_TTS_NOT_READY,
+                '本轮自定义语音接管失败，已回到监听状态。',
+              ),
+            );
           } else {
-            deps.setConnectivityHint(`语音回合失败：${message}`);
+            deps.setConnectivityHint(
+              withFaultSignature(
+                VOICE_FAULT_SIGNATURES.F10_ANDROID_DIALOG_RUNTIME_ERROR,
+                `语音回合失败：${message}`,
+              ),
+            );
           }
           deps.setPendingAssistantReply('');
           if (deps.voiceLoopActiveRef.current) {

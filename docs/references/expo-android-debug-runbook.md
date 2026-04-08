@@ -750,6 +750,28 @@ adb logcat -d | rg "traceId=|questionId=|replyId=|sessionEpoch=|sessionId=|turnI
 - custom 下收到平台 `chat_*`：leak guard 在工作，但需要排查为何未接管。
 - 多个 sessionId 交叉：优先看 `dialog.stale_drop` 是否生效。
 
+### 15.5 签名化故障提示（新增）
+
+当前 runtime 的关键失败提示统一为：
+
+- `connectivityHint = [<SIGNATURE>] <message>`
+
+示例：
+
+- `[F2_CLIENT_TTS_NOT_READY] 本轮自定义语音接管失败，已回到监听状态。`
+- `[F7_TEXT_ROUND_FAILED] 本轮文本对话失败，请检查网络后重试。(sdk send failed)`
+
+建议排查顺序：
+
+1. 先按签名聚类（同签名通常同根因族）。
+2. 再按 message 中的动态错误（如 SDK/网络文案）做二次定位。
+
+快速过滤命令：
+
+```bash
+adb logcat -d | rg "F2_CLIENT_TTS_NOT_READY|F3_PLATFORM_LEAK_IN_CUSTOM|F7_TEXT_ROUND_FAILED|F8_REPLY_CHAIN_CONFIG_INCOMPLETE|F9_ANDROID_CALL_START_FAILED|F10_ANDROID_DIALOG_RUNTIME_ERROR|F11_CUSTOM_REPLY_ROUND_FAILED"
+```
+
 关联文档：
 
 - 事件/指令契约：`docs/references/dialog-sdk-event-contract.md`
